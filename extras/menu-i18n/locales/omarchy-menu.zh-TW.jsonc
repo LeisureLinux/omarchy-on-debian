@@ -172,7 +172,7 @@
     "setup.config.hyprsunset": {"label": "Hyprsunset"},
     "setup.config.xcompose": {"label": "XCompose"},
     "setup.default": {"label": "預設項目"},
-    "setup.default.agent": {"label": "代理", "title": "預設代理"},
+    "setup.default.agent": {"label": "智能體", "title": "預設智能體"},
     "setup.default.agent.agy": {"label": "Antigravity"},
     "setup.default.agent.claude": {"label": "Claude"},
     "setup.default.agent.codex": {"label": "Codex"},
