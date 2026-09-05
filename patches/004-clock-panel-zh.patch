@@ -1,0 +1,83 @@
+--- a/shell/plugins/panels/clock/Panel.qml
++++ b/shell/plugins/panels/clock/Panel.qml
+@@ -64,10 +64,10 @@
+   // convention. Clicking the grid's "W" heading writes the choice back to
+   // shell.json.
+   readonly property int weekStart: Model.normalizedWeekStart(setting("weekStartDay", null), Qt.locale().firstDayOfWeek)
+-  // The interface is English throughout, so day names are not taken from the
+-  // system locale. Where the week starts still is: that is a regional
+-  // convention rather than a translation, and it stays overridable above.
+-  readonly property var labelLocale: Qt.locale("en_US")
++  // Day names follow the system locale (zh_CN gives 周日…周六, en_US gives
++  // Sun…Sat). Where the week starts is a regional convention too, and it
++  // stays overridable above.
++  readonly property var labelLocale: Qt.locale()
+   readonly property string nextWeekStartLabel: labelLocale.dayName(Model.toggledWeekStart(weekStart), Locale.LongFormat)
+   readonly property var weekdays: Model.weekdayOrder(weekStart)
+   readonly property var weeks: Model.monthGrid(viewYear, viewMonth, weekStart, todayKey)
+@@ -313,7 +313,7 @@
+                 id: heroDate
+                 textFormat: Text.PlainText
+                 anchors.verticalCenter: parent.verticalCenter
+-                text: Qt.formatDate(root.today, "MMMM d")
++                text: Qt.formatDate(root.today, Model.localizeMonthNames("MMMM d", root.today.getMonth()))
+                 color: heroMouse.containsMouse
+                   ? Style.hoverStateColor(root.contentForeground, Color.accent)
+                   : root.contentForeground
+@@ -321,6 +321,16 @@
+                 font.pixelSize: 52
+                 font.bold: true
+               }
++
++              Text {
++                id: heroLunar
++                textFormat: Text.PlainText
++                anchors.baseline: heroDate.baseline
++                text: Model.lunarFullLabel(root.today.getFullYear(), root.today.getMonth(), root.today.getDate())
++                color: Qt.darker(root.contentForeground, 1.6)
++                font.family: root.contentFontFamily
++                font.pixelSize: Style.font.body
++              }
+             }
+ 
+             MouseArea {
+@@ -669,7 +679,9 @@
+ 
+                       Text {
+                         textFormat: Text.PlainText
+-                        anchors.centerIn: parent
++                        anchors.horizontalCenter: parent.horizontalCenter
++                        anchors.top: parent.top
++                        anchors.topMargin: Style.space(3)
+                         text: modelData.day
+                         color: modelData.inMonth
+                           ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
+@@ -678,6 +690,19 @@
+                         font.pixelSize: Style.font.body
+                         font.bold: modelData.today
+                       }
++
++                      Text {
++                        textFormat: Text.PlainText
++                        anchors.horizontalCenter: parent.horizontalCenter
++                        anchors.bottom: parent.bottom
++                        anchors.bottomMargin: Style.space(2)
++                        // Solar day up top, lunar label underneath. Out-of-month
++                        // cells go quiet instead of double-dimming.
++                        text: modelData.inMonth ? Model.lunarDayLabel(modelData.year, modelData.month, modelData.day) : ""
++                        color: modelData.today ? Color.accent : Qt.darker(root.contentForeground, 1.7)
++                        font.family: root.contentFontFamily
++                        font.pixelSize: Style.space(9)
++                      }
+                     }
+                   }
+                 }
+@@ -721,7 +746,7 @@
+                 // "MAY 2026" and a "SEPTEMBER 2026".
+                 width: Style.space(130)
+                 horizontalAlignment: Text.AlignHCenter
+-                text: Qt.formatDate(root.viewDate, "MMMM yyyy").toUpperCase()
++                text: Qt.formatDate(root.viewDate, Model.localizeMonthNames("MMMM yyyy", root.viewDate.getMonth())).toUpperCase()
+                 color: Qt.darker(root.contentForeground, 1.4)
+                 font.family: root.contentFontFamily
+                 font.pixelSize: Style.font.body

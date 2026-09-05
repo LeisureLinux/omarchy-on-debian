@@ -1,0 +1,7 @@
+#!/bin/bash
+# Omarchy 4 shell (Quattro) on Debian 13 - launcher wrapper
+export OMARCHY_PATH="$HOME/.local/share/omarchy"
+export PATH="$OMARCHY_PATH/bin:$PATH"
+# 防 quickshell 崩溃重启链污染：qs 见到这些变量会误入重启模式（configPath 为空）起不来
+unset __QUICKSHELL_CRASH_DUMP_PID __QUICKSHELL_CRASH_INFO_FD __QUICKSHELL_CRASH_SIGNAL
+exec qs -p "$OMARCHY_PATH/shell"

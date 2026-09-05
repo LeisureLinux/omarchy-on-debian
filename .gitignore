@@ -1,0 +1,6 @@
+# never commit the upstream payload or fetched sources
+/cache/
+*.tar.gz
+*.patch.orig
+*.rej
+.DS_Store

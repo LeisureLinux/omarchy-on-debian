@@ -1,0 +1,18 @@
+--- a/shell/plugins/notifications/Service.qml
++++ b/shell/plugins/notifications/Service.qml
+@@ -146,11 +146,11 @@
+   // screen; the distinction only decides whether a DND-silenced one is worth
+   // recording at all.
+   function isEphemeral(notification) {
+-    var transient = false
++    var isTransient = false
+     try {
+-      transient = !!(notification.hints && notification.hints["transient"])
+-    } catch (e) { transient = false }
+-    return transient || NotificationLogic.isEphemeralApp(String(notification.appName || ""))
++      isTransient = !!(notification.hints && notification.hints["transient"])
++    } catch (e) { isTransient = false }
++    return isTransient || NotificationLogic.isEphemeralApp(String(notification.appName || ""))
+   }
+ 
+   function handleNotification(notification) {

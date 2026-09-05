@@ -1,0 +1,14 @@
+--- a/shell/plugins/panels/clock/BarWidget.qml
++++ b/shell/plugins/panels/clock/BarWidget.qml
+@@ -57,7 +57,10 @@
+   }
+ 
+   function formatted(date) {
+-    return Qt.formatDateTime(date, activeFormat.replace(/ww/g, Model.isoWeekLiteral(date.getFullYear(), date.getMonth(), date.getDate())))
++    // Localized month names by hand: this Qt build rejects QLocale args
++    // passed to the formatter from QML JS.
++    var fmt = activeFormat.replace(/ww/g, Model.isoWeekLiteral(date.getFullYear(), date.getMonth(), date.getDate()))
++    return Qt.formatDateTime(date, Model.localizeMonthNames(fmt, date.getMonth()))
+   }
+ 
+   // ---- Calendar popup. Shape contract for shell.summon/hide/toggle

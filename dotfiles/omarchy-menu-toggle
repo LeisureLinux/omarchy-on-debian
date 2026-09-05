@@ -1,0 +1,18 @@
+#!/bin/bash
+# Omarchy 菜单/启动器开关（供 Hyprland bind 调用）
+# shell 没在跑时自动拉起，再弹菜单
+export OMARCHY_PATH="$HOME/.local/share/omarchy"
+export PATH="$OMARCHY_PATH/bin:$PATH"
+# 防 quickshell 崩溃重启链污染：父进程若带这些变量，qs 会误入重启模式起不来
+unset __QUICKSHELL_CRASH_DUMP_PID __QUICKSHELL_CRASH_INFO_FD __QUICKSHELL_CRASH_SIGNAL
+
+if ! omarchy-shell -q shell ping >/dev/null 2>&1; then
+  setsid "$HOME/.local/bin/omarchy-port" >/dev/null 2>&1 < /dev/null &
+  # 等 shell 就绪（最多 8s）
+  for i in $(seq 1 16); do
+    omarchy-shell -q shell ping >/dev/null 2>&1 && break
+    sleep 0.5
+  done
+fi
+
+exec omarchy-shell shell toggle omarchy.menu '{"menu":"root"}'

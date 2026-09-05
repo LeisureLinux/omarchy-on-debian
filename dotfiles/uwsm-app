@@ -1,0 +1,5 @@
+#!/bin/bash
+# Debian 13 shim: 系统没有 uwsm/uwsm-app（Arch 的 Wayland 会话管理器）。
+# Omarchy 上游用 uwsm-app 把应用隔离进 systemd slice，Debian 直跑 Hyprland
+# 无此必要——直接 exec 目标命令，继承 shell 的 WAYLAND_DISPLAY 等环境。
+exec "$@"

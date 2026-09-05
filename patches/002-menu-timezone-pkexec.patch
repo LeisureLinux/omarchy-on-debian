@@ -1,0 +1,10 @@
+--- a/bin/omarchy-menu-timezone
++++ b/bin/omarchy-menu-timezone
+@@ -7,6 +7,6 @@
+ set -e
+ 
+ timezone=$(timedatectl list-timezones | omarchy-menu-select "Set timezone" -- --width 520 --maxheight 520) || exit 1
+-sudo timedatectl set-timezone "$timezone"
++pkexec timedatectl set-timezone "$timezone"
+ omarchy-shell -q omarchy.clock refresh
+ omarchy-notification-send "Timezone is now set to $timezone"
