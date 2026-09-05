@@ -107,6 +107,57 @@ Not a bug you can fix. Hyprland 0.55 has no `minimize` dispatcher
 (`hyprctl dispatch minimize` → `Invalid dispatcher`). The shipped binds park
 windows on `special:minimized` and toggle that workspace instead.
 
+## 11. Super+D does nothing — no panel appears, `hyprctl layers` shows no `omarchy-menu` namespace
+
+Two distinct silent failures look identical from the keyboard: Super+D pressed,
+nothing on screen, no log line pointing at the menu. The truth is in
+`hyprctl layers` — if there is **no Layer with `namespace: omarchy-menu`**,
+the menu's `PanelWindow` never instantiated.
+
+**a) Stale Hyprland instance signature.** A dead `Hyprland` (e.g. you `pkill`'d
+the compositor to reset it) leaves its `~/.local/share/omarchy/.../shell`
+Quickshell pointed at the dead compositor's socket. The shell starts, tries
+to talk IPC, fails, the PanelWindow never gets the layer-shell ack and stays
+hidden. The diagnostic is in the launcher's hands, not yours:
+
+```bash
+ls -l /proc/$(pgrep -f 'qs -p.*omarchy/shell' | head -1)/environ | tr '\0' '\n' | grep HYPRLAND_INSTANCE_SIGNATURE
+find /run/user/$(id -u)/hypr -mindepth 1 -maxdepth 1 -type d \
+  -exec sh -c '[ -S "$1/.socket.sock" ] && [ -S "$1/.socket2.sock" ] && echo "LIVE $1"' _ {} \;
+```
+
+If the `HYPRLAND_INSTANCE_SIGNATURE` does not appear in the `LIVE` list, the
+shell is talking to a dead compositor. The `dotfiles/omarchy-port` and
+`dotfiles/omarchy-menu-toggle` shipped here both auto-discover the live HIS
+and re-export it before exec'ing `qs` — kill the orphaned shell, rerun the
+launcher, retry Super+D.
+
+**b) `PanelWindow` fails to instantiate from a duplicated QML signal handler.**
+If a custom `Menu.qml` edit accidentally declares the same property binding
+twice (e.g. an `onVisibleChanged` and an `onWidthChanged` both overriding
+existing handlers in the upstream file), Qt prints
+`WARN: Property value set multiple times Menu.qml[NNNN:5]` and **silently
+drops the `PanelWindow` itself** — no error, no layer, no menu. No log line
+to grep for, because the warning is buried in `/tmp/qsp-fresh.log` (or
+similar) if at all. Diagnostic:
+
+```bash
+pkill -x qs
+qs -p ~/.local/share/omarchy/shell > /tmp/qs.log 2>&1 &
+# press Super+D
+grep -nE 'set multiple times|Property value|QQmlContext' /tmp/qs.log
+hyprctl layers | grep omarchy-menu   # still empty? PanelWindow is dead
+```
+
+Fix: re-edit `~/.local/share/omarchy/shell/plugins/menu/Menu.qml`, remove
+the duplicate handler, `omarchy-restart-shell`. Verify with
+`hyprctl layers | grep omarchy-menu` — the namespace must appear.
+
+The menu plugin already wraps a `summon → openPanelIds[id]=true →
+deliverIfLoaded() → visible = opened && rowsLoaded` chain. If
+`isPluginOpen` is `true` and `hyprctl layers` still has no menu namespace,
+the `PanelWindow` is the broken component, not the IPC path.
+
 ---
 
 ## Useful commands
@@ -118,4 +169,7 @@ omarchy-shell shell toggle omarchy.menu '{"menu":"root"}'
 hyprctl reload                              # re-read binds
 hyprctl binds | grep -i omarchy
 qs -p ~/.local/share/omarchy/shell 2>&1 | tee /tmp/qs.log
+hyprctl layers | grep omarchy-menu         # is the Super+D panel alive?
+omarchy-menu-locale zh-CN                   # switch menu to 简体中文
+omarchy-menu-locale en                     # back to English
 ```

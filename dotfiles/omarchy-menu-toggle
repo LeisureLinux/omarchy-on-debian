@@ -6,9 +6,57 @@ export PATH="$OMARCHY_PATH/bin:$PATH"
 # 防 quickshell 崩溃重启链污染：父进程若带这些变量，qs 会误入重启模式起不来
 unset __QUICKSHELL_CRASH_DUMP_PID __QUICKSHELL_CRASH_INFO_FD __QUICKSHELL_CRASH_SIGNAL
 
-if ! omarchy-shell -q shell ping >/dev/null 2>&1; then
+# 兜底 1：修复 "qs 进程在但 IPC dead" 的僵尸态
+# 现象：by-id 下所有 socket 都被 qs 标记为 Dead，ping 永远失败，Super+D 卡死
+# 解决：探测 pid + alive by-id socket 不一致 → 杀僵尸后让 ping 重新走慢路径
+zombie_qs_pid=$(pgrep -f 'qs -p '"$OMARCHY_PATH"'/shell' 2>/dev/null | head -1)
+if [[ -n $zombie_qs_pid ]]; then
+  live_sock_count=$(find /run/user/$(id -u)/quickshell/by-id -maxdepth 2 -type s -not -name '*.lock' 2>/dev/null | wc -l)
+  if (( live_sock_count == 0 )); then
+    kill -TERM "$zombie_qs_pid" 2>/dev/null
+    sleep 0.5
+    kill -KILL "$zombie_qs_pid" 2>/dev/null
+    wait 2>/dev/null
+  fi
+fi
+
+# 兜底 2：修复 "HYPRLAND_INSTANCE_SIGNATURE stale"。
+# Hyprland 偶尔会在内部切换 instance（崩溃自愈/升级），子进程 env 还是旧 sig，
+# quickshell 找不到 .socket.sock/.socket2.sock → 拿不到 monitors → PanelWindow
+# 没有 screen 锚点 → toggle 状态翻成 open 但屏幕上什么都看不见。
+# 现象：toggle rc=0、listPlugins 一切正常、Hyprland 完全活，但菜单不弹。
+# 解决：对比子进程 HIS vs 真活 hyprland sig，不一致就杀 qs 重启。
+find_live_his() {
+  local d latest_dir latest_mtime=0 mt
+  for d in /run/user/$(id -u)/hypr/*/; do
+    [[ -S $d/.socket.sock && -S $d/.socket2.sock ]] || continue
+    mt=$(stat -c %Y "$d" 2>/dev/null) || continue
+    if (( mt > latest_mtime )); then
+      latest_mtime=$mt
+      latest_dir=$d
+    fi
+  done
+  [[ -n $latest_dir ]] && basename "$latest_dir"
+}
+qs_pid_now=$(pgrep -f 'qs -p '"$OMARCHY_PATH"'/shell' 2>/dev/null | head -1)
+if [[ -n $qs_pid_now ]]; then
+  qs_his=$(tr '\0' '\n' </proc/$qs_pid_now/environ 2>/dev/null \
+           | awk -F= '$1=="HYPRLAND_INSTANCE_SIGNATURE"{print $2; exit}')
+  live_his=$(find_live_his)
+  if [[ -n $live_his && -n $qs_his && $live_his != "$qs_his" ]]; then
+    echo "[omarchy-menu-toggle] killing stale qs pid=$qs_pid_now" >&2
+    echo "  qs_his=$qs_his live_his=$live_his" >&2
+    kill -TERM "$qs_pid_now" 2>/dev/null
+    sleep 0.5
+    kill -KILL "$qs_pid_now" 2>/dev/null
+    wait 2>/dev/null
+    qs_pid_now=""
+  fi
+fi
+
+# 启动/等就绪。omarchy-port 会自己再扫一次活 HIS（双保险），但只有进程死了才走它。
+if [[ -z $qs_pid_now ]] && ! omarchy-shell -q shell ping >/dev/null 2>&1; then
   setsid "$HOME/.local/bin/omarchy-port" >/dev/null 2>&1 < /dev/null &
-  # 等 shell 就绪（最多 8s）
   for i in $(seq 1 16); do
     omarchy-shell -q shell ping >/dev/null 2>&1 && break
     sleep 0.5

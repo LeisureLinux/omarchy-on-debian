@@ -1,7 +1,40 @@
 #!/bin/bash
-# Omarchy 4 shell (Quattro) on Debian 13 - launcher wrapper
+# Omarchy 4 shell (Quattro) on Debian 13 - launcher wrapper.
+#
+# 关键修复（2026-09-05）：Hyprland 14:56 内部切换 instance 之后，子进程里
+# HYPRLAND_INSTANCE_SIGNATURE 还指向旧 sig，导致 qs 完全连不上 Hyprland IPC，
+# 拿不到 monitors，PanelWindow 没有锚点 → Super+D 调出菜单时窗口存在但 0×0，
+# 用户屏幕什么都看不到。本脚本启动 qs 前，先用 socket scan 自动找出 *真活*
+# 的 HIS 覆盖到 env，再 exec，让 quickshell 能正常拿到 monitor。
+
 export OMARCHY_PATH="$HOME/.local/share/omarchy"
 export PATH="$OMARCHY_PATH/bin:$PATH"
-# 防 quickshell 崩溃重启链污染：qs 见到这些变量会误入重启模式（configPath 为空）起不来
+# 防 quickshell 崩溃重启链污染：qs 见到这些变量会误入重启模式起不来
 unset __QUICKSHELL_CRASH_DUMP_PID __QUICKSHELL_CRASH_INFO_FD __QUICKSHELL_CRASH_SIGNAL
+
+# 自动发现真活 Hyprland instance：四件套齐 .socket.sock / .socket2.sock /
+# .hyprpaper.sock（同时还认 hyprland.lock 守护）才算真活；取最近修改的目录。
+find_live_his() {
+  local dir socket latest_dir latest_mtime=0
+  for dir in /run/user/$(id -u)/hypr/*/; do
+    [[ -S $dir/.socket.sock && -S $dir/.socket2.sock ]] || continue
+    local mt
+    mt=$(stat -c %Y "$dir" 2>/dev/null) || continue
+    if (( mt > latest_mtime )); then
+      latest_mtime=$mt
+      latest_dir=$dir
+    fi
+  done
+  [[ -n $latest_dir ]] && basename "$latest_dir"
+}
+
+CURRENT_HIS="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+LIVE_HIS=$(find_live_his)
+
+if [[ -n $LIVE_HIS && $LIVE_HIS != "$CURRENT_HIS" ]]; then
+  echo "[omarchy-port] HYPRLAND_INSTANCE_SIGNATURE stale:" \
+       "env=$CURRENT_HIS live=$LIVE_HIS — refreshing" >&2
+  export HYPRLAND_INSTANCE_SIGNATURE="$LIVE_HIS"
+fi
+
 exec qs -p "$OMARCHY_PATH/shell"

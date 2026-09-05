@@ -1,0 +1,157 @@
+#!/bin/bash
+# Omarchy 菜单多语言切换
+# 用法:
+#   omarchy-menu-locale              # 显示当前生效语言
+#   omarchy-menu-locale en           # 切回英文（清空 user extension）
+#   omarchy-menu-locale zh-CN        # 切到简体中文
+#   omarchy-menu-locale zh-TW        # 切到繁體中文
+#   omarchy-menu-locale list         # 列出已安装语言
+#
+# 实现机制:
+#   1. 翻译文件位于 $OMARCHY_PATH/default/omarchy/omarchy-menu.<lang>.jsonc
+#   2. 本脚本把选中的 <lang> 翻译 + 用户原有自定义条目合并写出到
+#      ~/.config/omarchy/extensions/omarchy-menu.jsonc
+#   3. 调 omarchy-shell refresh 触发 menu 插件 re-read
+#
+# 注意: 切换语言会清掉 user extension 文件里 _locale 标记的所有翻译条目;
+# 你自己手写的不带 _locale 字段的自定义条目会被保留。
+set -euo pipefail
+
+export OMARCHY_PATH="${OMARCHY_PATH:-$HOME/.local/share/omarchy}"
+export PATH="$OMARCHY_PATH/bin:$PATH"
+unset __QUICKSHELL_CRASH_DUMP_PID __QUICKSHELL_CRASH_INFO_FD __QUICKSHELL_CRASH_SIGNAL
+
+USER_EXT_DIR="$HOME/.config/omarchy/extensions"
+USER_EXT="$USER_EXT_DIR/omarchy-menu.jsonc"
+LOCALE_FILE="$HOME/.config/omarchy/locale"
+DEFAULT_MENU_DIR="$OMARCHY_PATH/default/omarchy"
+
+# 解析 / 校验语言
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [en | zh-CN | zh-TW | list | -h]
+USAGE
+}
+
+# 用 jq 在 shell 里完成 deep-merge: 读 user ext, 把 _locale=old 的条目剥掉,
+# 把 new locale 的翻译条目合并进去, 写回
+merge_locale() {
+  local new_locale="$1"
+  local new_file="$DEFAULT_MENU_DIR/omarchy-menu.$new_locale.jsonc"
+
+  if [[ ! -f $new_file ]]; then
+    echo "✗ translation file not found: $new_file" >&2
+    return 1
+  fi
+
+  mkdir -p "$USER_EXT_DIR"
+
+  # 读旧 user ext (可能有, 可能没有), 剥 _locale == new_locale 的条目
+  # (因为我们以"合并"为目标 —— 旧条目等于新翻译 → 让新的赢;
+  #  不等于 → 不论新旧都先剥掉所有带 _locale 的条目, 然后用默认翻译 + 旧 non-locale 条目重建)
+  local old_user_json="{}"
+  if [[ -f $USER_EXT ]]; then
+    old_user_json=$(strip_jsonc < "$USER_EXT" | jq -S --arg old "$new_locale" '
+      .items = (.items // {} | with_entries(select((.value._locale // "") != $old)))
+    ' 2>/dev/null || echo '{"items":{}}')
+  fi
+
+  # 读新翻译, 给每个条目加 _locale 标记
+  local new_translation_json
+  new_translation_json=$(strip_jsonc < "$new_file" | jq -S --arg loc "$new_locale" '
+    {
+      items: (
+        (.items // {}) as $items
+        | reduce ($items | keys[]) as $k ({}; .[$k] = ($items[$k] + {_locale: $loc}))
+      )
+    }
+  ')
+
+  # 合并: 旧 (non-locale) 优先 (用户加的自定义) , 新 locale 覆盖
+  local merged
+  merged=$(jq -S -n --argjson old "$old_user_json" --argjson nw "$new_translation_json" '
+    {
+      items: (
+        ((($old.items // {}) + ($nw.items // {})))
+      )
+    }
+  ')
+
+  # 写回 (jq 自动 pretty-print + 处理 unicode escapes)
+  echo "$merged" | jq '.' > "$USER_EXT"
+
+  echo "✓ menu locale switched to: $new_locale"
+  echo "  user extension: $USER_EXT"
+  echo "  entries: $(jq '.items | length' "$USER_EXT")"
+}
+
+clear_locale() {
+  mkdir -p "$USER_EXT_DIR"
+  # 完全清空 user extension, 用户在 setup 阶段自己加的也一起清掉 (因为我们不区分了)
+  echo '{"items": {}}' > "$USER_EXT"
+  rm -f "$LOCALE_FILE"
+  echo "✓ menu locale cleared (English default restored)"
+}
+
+current_locale() {
+  if [[ ! -f $USER_EXT ]]; then
+    echo "en"
+    return
+  fi
+  strip_jsonc < "$USER_EXT" | jq -r '
+    ((.items // {}) | to_entries
+     | map(select((.value._locale // "") != ""))
+     | .[0].value._locale // "en")
+  ' 2>/dev/null || echo "en"
+}
+
+list_locales() {
+  echo "Built-in locales (shipped under default/omarchy/):"
+  for f in "$DEFAULT_MENU_DIR"/omarchy-menu.*.jsonc; do
+    [[ -e $f ]] || continue
+    base=$(basename "$f")
+    lang="${base#omarchy-menu.}"
+    lang="${lang%.jsonc}"
+    n=$(strip_jsonc < "$f" | jq '.items | length' 2>/dev/null || echo "?")
+    printf "  %-8s  (%s entries)\n" "$lang" "$n"
+  done
+}
+
+# strip JSONC line-comments so jq accepts the result
+strip_jsonc() {
+  sed -E 's://.*$::' "$@"
+}
+
+# Live refresh — 触发 menu 插件重新读 user extension
+# omarchy-menu wrapper 把 refresh 暴露为 verb, 走 omarchy-shell shell call omarchy.menu refresh
+refresh_menu() {
+  omarchy-menu refresh '{}' >/dev/null 2>&1 || true
+}
+
+case "${1:-}" in
+  "")
+    cur=$(current_locale)
+    echo "Current menu locale: $cur"
+    cur_short="$(basename "$0")"
+    echo "Run '${cur_short} list' to see available languages."
+    ;;
+  en)
+    clear_locale
+    refresh_menu
+    ;;
+  zh-CN | zh-TW)
+    merge_locale "$1"
+    refresh_menu
+    ;;
+  list)
+    list_locales
+    ;;
+  -h | --help | help)
+    usage
+    ;;
+  *)
+    echo "Unknown locale: $1" >&2
+    usage
+    exit 2
+    ;;
+esac

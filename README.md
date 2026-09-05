@@ -120,6 +120,52 @@ python3 extras/gen-term-table.py > /tmp/termInfo.js
 
 Skip it with `./install.sh --no-clock-zh`.
 
+## Menu i18n — Simplified / Traditional Chinese overlays (optional)
+
+`extras/menu-i18n/` ships a Chinese overlay for the Super+D menu. Translation
+sources live in `extras/menu-i18n/locales/omarchy-menu.zh-{CN,TW}.jsonc`
+(331 entries each, only `label` is written — every other field inherits from
+the default menu). The switcher `extras/menu-i18n/omarchy-menu-locale` deep-merges
+the chosen locale into `~/.config/omarchy/extensions/omarchy-menu.jsonc` and
+re-tags it with `_locale: "<lang>"`, so re-running the switcher leaves your
+non-locale custom entries alone.
+
+```bash
+~/.local/bin/omarchy-menu-locale             # show current
+~/.local/bin/omarchy-menu-locale zh-CN       # apply 简体中文
+~/.local/bin/omarchy-menu-locale zh-TW       # apply 繁體中文
+~/.local/bin/omarchy-menu-locale en          # back to English (clears user ext)
+~/.local/bin/omarchy-menu-locale list        # list installed locales
+```
+
+Switching is hot-applied: the menu plugin watches the user-extension file and
+re-reads it. `hyprctl layers` will show `namespace: omarchy-menu` come and go
+as Super+D toggles — use it to confirm the PanelWindow really instantiates
+instead of trusting a silent log line.
+
+### Why the locale scripts alone are not enough
+
+`MenuModel.mergeMenuSources(default, user)` does **whole-entry replacement**:
+if the user extension contains `id: "about"` it overwrites the default
+`about` entry entirely. A translation line like `{"label":"关于"}` gets
+completed by `MenuModel.normalizeItem()` into `{id:"about", parent:"root",
+kind:"menu", icon:"", label:"关于", action:"", target:"", ...}` — and that
+overwrites the real `about`'s `kind/action/icon`, leaving the menu full of
+inert stubs that render as **「Go… + Nothing here yet」**.
+
+The fix lives in Quickshell core (`~/.local/share/omarchy/shell/plugins/menu/`,
+not in this repo): `parseMenuJsonc` / `normalizeItem` accept a `sparse`
+flag, the user extension is parsed with `sparse=true` (only the fields you
+actually wrote, no completion, no `kind/parent` auto-inference), and the
+default menu still parses `sparse=false`. Then `{"label":"关于"}` only
+overwrites the `label` of `about` — `kind/action/icon/parent` keep their
+default values and the menu renders normally with Chinese text.
+
+If your core files are upstream-clean, the sparse patch is the only edit
+you need. See `extras/menu-i18n/README.md` for the exact code change and
+[`TROUBLESHOOTING.md §11`](TROUBLESHOOTING.md) for the silent-failure mode
+that motivated it.
+
 ## Layout
 
 ```
@@ -129,6 +175,7 @@ steps/1x..7x        the numbered steps
 patches/            unified diffs against upstream, applied with -p1 in ~/.local/share/omarchy
 dotfiles/           omarchy-port, omarchy-menu-toggle, uwsm-app, fontconfig, hypr snippet
 extras/clock-zh/    replacement Model.js + table generators
+extras/menu-i18n/   zh-CN / zh-TW menu overlays, locale switcher, sparse-merge notes
 ```
 
 ## Scope / known limits
