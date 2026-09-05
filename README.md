@@ -11,7 +11,7 @@ version quirks. This repo is that gap, packaged as numbered, idempotent steps.
 Tested on: Debian 13.6, Hyprland 0.55.2 (bpo13), Quickshell 0.3.0 (bpo13), Qt 6.8.2.
 
 ```
-git clone https://github.com/<you>/omarchy-on-debian
+git clone https://github.com/LeisureLinux/omarchy-on-debian
 cd omarchy-on-debian
 ./install.sh --dry-run     # look first
 ./install.sh               # then run
@@ -37,6 +37,53 @@ picker. `./steps/70-verify.sh` prints a health table at any time.
 Steps are standalone: `./install.sh --only 40` re-applies patches after an
 upstream refresh. Backups of anything overwritten land in
 `~/.local/share/omarchy/.omarchy-on-debian/backups/`.
+
+## Packages
+
+Step 10 installs three groups. Nothing is removed — it only ever adds.
+
+**Core** (installed unconditionally; the shell and its QML plugins exec these):
+
+`quickshell` `hyprland` `xdg-desktop-portal-hyprland` `jq` `bc` `curl` `wget`
+`unzip` `rsync` `imagemagick` `inotify-tools` `libxkbcommon-tools` (xkbcli)
+`libnotify-bin` `polkitd` `pkexec` `wireplumber` `network-manager` `bluez`
+`power-profiles-daemon` `grim` `slurp` `wl-clipboard` `pipewire`
+`pipewire-pulse` `fonts-firacode`
+
+`quickshell`, `hyprland` and `xdg-desktop-portal-hyprland` come from
+`trixie-backports`, which the step adds with `Pin-Priority: 100` — backports
+only fills gaps, it never upgrades stable packages.
+
+**Optional** (installed if the repo carries them; each gates a feature, and the
+shell hides the entry when the binary is missing — no errors, just an absent
+menu row):
+
+| Package | Gates | In Debian 13 |
+|---|---|---|
+| `gum` | TUI pickers in some `omarchy-*` scripts | yes |
+| `brightnessctl` | brightness OSD / keys | yes |
+| `pamixer` | volume OSD | yes |
+| `wtype` | typing into the focused window | yes |
+| `hyprpicker` | colour picker | yes (backports) |
+| `hyprsunset` | night light | yes (backports) |
+| `cliphist` | clipboard history | yes |
+| `swayidle` `swaylock` | idle / lock | yes |
+
+On the reference machine these are intentionally **not** installed — the
+matching menu entries simply stay hidden. Install any of them later and the
+feature appears after a shell restart.
+
+**Deliberately not installed:**
+
+| Package | Why not |
+|---|---|
+| `mako` | The shell's notifications plugin runs Quickshell's own `NotificationServer` (`plugins/notifications/Service.qml`). A second daemon just fights it for the notification bus — you get double or zero notifications. |
+| `waybar` | The Omarchy bar replaces it. If already installed, comment it out of `hyprland.conf` autostart or you get two bars. Step 60 warns but does not edit existing lines. |
+| `uwsm` / `uwsm-app` | Not packaged for Debian. Upstream wraps every app launch in it; the `uwsm-app` shim in `dotfiles/` makes those launches plain `exec "$@"` instead. |
+| Nerd Fonts | Debian ships none. Step 10 downloads FiraCode Nerd Font to `~/.local/share/fonts` if no Nerd Font is present. |
+
+`fc-list` and `apt-cache` output is locale-dependent — `apt-cache policy` prints
+候选版本 under zh_CN, so step 10 parses it with `LC_ALL=C`.
 
 ## The patches (the actual port)
 
