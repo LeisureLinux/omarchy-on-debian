@@ -160,6 +160,46 @@ the `PanelWindow` is the broken component, not the IPC path.
 
 ---
 
+## 12. Menu → About opens nothing (or a small clipped window)
+
+`omarchy-launch-about` renders fastfetch inside a terminal found by
+`xdg-terminal-exec`. Three independent things break it on Debian:
+
+**a) `xdg-terminal-exec` missing** — `omarchy-launch-tui` execs
+`uwsm-app -- xdg-terminal-exec ...`; when the binary is absent the chain
+dies silently and no window ever appears. Fix: `apt install
+xdg-terminal-exec` (it is in trixie; step 10 installs it).
+
+**b) The resolved terminal cannot carry the app-id** — Debian's
+`foot.desktop` declares no `X-TerminalArgAppId`, so the window's class
+stays `foot` and the `org.omarchy.about` float/size rules never match;
+kitty's entry declares `X-TerminalArgAppId=--class`. Fix: put
+`kitty.desktop` first in `~/.config/hyprland-xdg-terminals.list`, and if a
+user-level `~/.local/share/applications/kitty.desktop` (the common
+`env GLFW_IM_MODULE=ibus kitty` IME variant) shadows the system entry,
+append the `X-Terminal*` keys to it — step 65 does both. The resolver
+caches its pick in `~/.cache/xdg-terminal-exec`; the hash covers the list
+files, so editing the list is enough.
+
+**c) A user fastfetch config shadows the Omarchy layout** — any
+`~/.config/fastfetch/config.jsonc` makes `omarchy-launch-about` skip its
+window-fit and logo-sheen code paths (`custom_fastfetch_config()`), so
+the window opens at the static rule size and clips. Move it aside:
+
+```bash
+mv ~/.config/fastfetch/config.jsonc ~/.config/fastfetch/config.jsonc.bak
+```
+
+Verify the whole chain:
+
+```bash
+omarchy-launch-about
+hyprctl clients -j | jq -r '.[] | select((.class // "") | test("omarchy.about"))'
+# expect: class=org.omarchy.about, floating=true, size≈[1100,580]
+```
+
+---
+
 ## Useful commands
 
 ```bash
@@ -172,4 +212,6 @@ qs -p ~/.local/share/omarchy/shell 2>&1 | tee /tmp/qs.log
 hyprctl layers | grep omarchy-menu         # is the Super+D panel alive?
 omarchy-menu-locale zh-CN                   # switch menu to 简体中文
 omarchy-menu-locale en                     # back to English
+omarchy-launch-about                        # About (fastfetch) screen
+hyprctl clients -j | jq '.[] | select(.class == "org.omarchy.about")'
 ```

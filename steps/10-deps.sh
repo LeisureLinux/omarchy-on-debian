@@ -41,6 +41,9 @@ PACKAGES=(
   grim slurp wl-clipboard       # screenshots / clipboard
   pipewire pipewire-pulse
   fonts-firacode
+  fastfetch                     # menu → About
+  xdg-terminal-exec             # omarchy-launch-tui terminal resolution
+  kitty                         # default terminal (X-TerminalArgAppId capable)
 )
 
 # --- optional, feature-gated: skip anything the repo does not carry

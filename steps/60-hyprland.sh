@@ -13,8 +13,14 @@ BLOCK="$MARKER
 exec-once = \$HOME/.local/bin/omarchy-port
 
 # Menu / launcher
-bind = \$mainMod, D, exec, \$HOME/.local/bin/omarchy-menu-toggle
+bind = \$mainMod, space, exec, \$HOME/.local/bin/omarchy-menu-toggle
 bind = \$mainMod ALT, T, exec, \$HOME/.local/share/omarchy/bin/omarchy-menu toggle theme
+
+# About (fastfetch) window — class comes from xdg-terminal-exec passing
+# kitty's --class; without these the TUI opens tiled and clipped.
+windowrule = match:class ^(org\\.omarchy\\.about)\$, float on
+windowrule = match:class ^(org\\.omarchy\\.about)\$, center on
+windowrule = match:class ^(org\\.omarchy\\.about)\$, size 1100 580
 
 # Hyprland has no minimize dispatcher: park windows on a special workspace
 bind = \$mainMod, M, movetoworkspacesilent, special:minimized

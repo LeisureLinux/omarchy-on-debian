@@ -31,7 +31,8 @@ picker. `./steps/70-verify.sh` prints a health table at any time.
 | 30 | `steps/30-deploy.sh` | rsyncs `shell/ bin/ config/ default/ themes/` into `~/.local/share/omarchy`, installs the launcher, the `uwsm-app` shim, and the login-shell PATH. |
 | 40 | `steps/40-patch.sh` | The compatibility patches (below). Idempotent — reverse-applies to detect "already done". |
 | 50 | `steps/50-fonts.sh` | Installs `omarchy.ttf` and forces `monospace` → Nerd Font. |
-| 60 | `steps/60-hyprland.sh` | Autostart, menu key, minimised-window workspace. |
+| 60 | `steps/60-hyprland.sh` | Autostart, menu key, minimised-window workspace, About window rules. |
+| 65 | `steps/65-about.sh` | The About screen: `/etc/fastfetch/config.jsonc`, the Omarchy logo, and the xdg-terminal-exec glue that makes the `org.omarchy.about` class resolvable. |
 | 70 | `steps/70-verify.sh` | Health checks + a lunar-table spot check. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an
@@ -165,6 +166,34 @@ If your core files are upstream-clean, the sparse patch is the only edit
 you need. See `extras/menu-i18n/README.md` for the exact code change and
 [`TROUBLESHOOTING.md §11`](TROUBLESHOOTING.md) for the silent-failure mode
 that motivated it.
+
+## kitty + IME: `linux_display_server x11` kills Chinese input
+
+kitty only supports input methods on its **Wayland** backend (text-input-v3).
+Its `linux_display_server x11` option forces it onto XWayland, where kitty has
+**no IME support at all** — fcitx5 is healthy, XIM is even registered
+(`xprop -root XIM_SERVERS` lists it), but kitty never speaks XIM. Typing is
+literal: no preedit, no candidate window, ever. This bites on Debian/Hyprland
+ports where an old `kitty.conf` carried over from an X11 desktop still sets
+`x11`.
+
+Symptoms: no soft keyboard / candidate popup in kitty when switching to
+Chinese; `fcitx5-diagnose` and every GTK/Qt app are fine.
+
+Fix — one line in `~/.config/kitty/kitty.conf`:
+
+```
+linux_display_server wayland
+```
+
+Then restart kitty (config is read at startup). Verify the backend with
+`hyprctl clients` (`xwayland: 0`) or by checking which socket kitty holds:
+`ls -l /proc/$(pgrep -x kitty)/fd | grep -c wayland`.
+
+Debugging tip that settles this class of problem fast: `hyprctl clients`
+shows `xwayland: 1` for XWayland apps; `ss -xp` resolves each process's
+sockets to `/tmp/.X11-unix/X0` vs `wayland-1`. If the "broken" app turns out
+to be on X11, the whole fcitx5 config is a red herring.
 
 ## Layout
 
