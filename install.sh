@@ -42,7 +42,8 @@ export DRY_RUN WITH_CLOCK_ZH OMARCHY_SRC OMARCHY_HOME OMARCHY_WORK OMARCHY_REPO 
 STEPS=(steps/10-deps.sh steps/20-fetch.sh steps/30-deploy.sh steps/40-patch.sh
        steps/50-fonts.sh steps/60-hyprland.sh steps/65-about.sh steps/66-calculator.sh
        steps/67-monitor-scaling.sh steps/68-pkg-apt.sh steps/69-show-desktop.sh
-       steps/70-bar-overlay.sh steps/71-verify.sh steps/72-lockscreen-pam.sh)
+       steps/70-bar-overlay.sh steps/71-verify.sh steps/72-lockscreen-pam.sh
+       steps/73-wallpaper-rotate.sh steps/74-workspace-wallpaper.sh)
 
 log "omarchy-on-debian — target: $OMARCHY_HOME"
 [ "$DRY_RUN" = 1 ] && warn "dry run: nothing will be changed"

@@ -4,3 +4,9 @@
 *.patch.orig
 *.rej
 .DS_Store
+
+# local backup directories (date-stamped, never shipped)
+/.bak-*/
+
+# local article preview renders (the .md source is tracked)
+/articles/*.html

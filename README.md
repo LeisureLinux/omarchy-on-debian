@@ -38,6 +38,7 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 | 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
 | 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes an XDG autostart entry so `systemd-xdg-autostart-generator` mints `app-wpaperd\x2dautostart@autostart.service` (same shape as `app-wallstreet\x2dautostart@autostart.service`), a default `~/.config/wpaperd/wallpaper.toml`, comments out the `hyprpaper` exec-once. |
+| 74   | `steps/74-workspace-wallpaper.sh` | Take per-workspace rotation one step further: hyprpaper is enabled as the active wallpaper daemon (Debian backports), `~/.config/hypr/hyprpaper.conf` is rewritten with one `workspace = N, monitor:MON, default:IMG` line per workspace, the Bing pool is sliced into `~/Pictures/wallpapers/ws{1..5}/`, and a systemd user timer (`hyprpaper-workspace-rotate.timer`, 5-min cadence) re-rolls each workspace's wallpaper independently. `wpaperd` is demoted (autostart desktop renamed to `.disabled-step74`, daemon stopped) but kept installed as a one-command fallback. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
@@ -186,8 +187,156 @@ step 73 from `cargo install` to `apt install wpaperd` and the same
 template handles `swww`, `waypaper`, and any other Rust wallpaper
 tool you want to ship.
 
-`fc-list` and `apt-cache` output is locale-dependent — `apt-cache policy` prints  
-候选版本 under zh_CN, so step 10 parses it with `LC_ALL=C`.
+### Per-workspace rotation with `hyprpaper` (step 74)
+
+`wpaperd` only rotates per monitor, so step 74 takes over with
+`hyprpaper` — but **not** the Debian trixie-backports 0.8.4 build
+(that one segfaults on this stack). Step 74 fetches the Arch
+`extra`/`core` prebuilt packages instead and stitches them onto
+Debian trixie via three small patchelf tricks.
+
+Each Hyprland workspace gets its own pool, and a Python IPC listener
+switches the wallpaper whenever you change workspace — no polling
+delay, no systemd timer.
+
+The pool topology:
+
+```
+~/.local/share/backgrounds/        ← Bing timer drops here (shared)
+~/Pictures/wallpapers/ws1/         ← ChateauLoire.jpg   (DP-4  when present)
+~/Pictures/wallpapers/ws2/         ← DuckPond.jpg       (eDP-1)
+~/Pictures/wallpapers/ws3/         ← ElephantDay.jpg    (eDP-1)
+~/Pictures/wallpapers/ws4/         ← IbizaIslets.jpg    (eDP-1)
+~/Pictures/wallpapers/ws5/         ← IcelandSheep.jpg   (eDP-1)
+```
+
+When a workspace is focused, `~/bin/hyprpaper-ws-switch.py` reads the
+first `.jpg` in its pool and tells hyprpaper via IPC.
+
+#### Why Arch binaries instead of the Debian trixie-backports build?
+
+`hyprpaper 0.8.4-1~bpo13+1` (Debian trixie-backports, GCC 14.2)
+segfaults after the second `hyprctl hyprpaper wallpaper` IPC call on
+this stack — coredumpctl shows status=11 (SEGV) in image-swap,
+root-caused to a use-after-free that disappears with GCC 16's
+codegen. Arch `extra` carries `hyprpaper-0.8.4-8-x86_64.pkg.tar.zst`
+(GCC 16 build); verified on 2026-09-06 across 10 consecutive
+workspace switches with the daemon PID stable.
+
+#### The three patchelf tricks
+
+The Arch package is x86-64 glibc 2.44, but our Debian trixie is
+glibc 2.41, libstdc++ 6.0.33. The binary's imports tell us what to
+patch:
+
+| Symbol requirement | Comes from | Patch |
+|---|---|---|
+| `GLIBCXX_3.4.36` (libstdc++) | Arch `core/libstdc++-16.2.1` | Private copy to `~/.local/lib/libstdc++.so.6.0.36` + symlink |
+| `GLIBC_2.43` (`sqrtf`, `log10f`) on `libhyprutils.so.0.14.1` + `libhyprtoolkit.so.0.5.4` | glibc 2.44 | Custom 14 KB math shim (`shim.c` self-recursive + `version.map`) |
+| `hyprpaper` binary itself | (no GLIBC 2.43 import) | RPATH only, no shim |
+
+`objdump -T` is the source of truth for who imports what — checking
+just `DT_NEEDED` misses transitive imports. The shim is tiny:
+
+```c
+float  sqrtf(float x)  { return sqrtf(x);  }   /* self-recursive */
+float  log10f(float x) { return log10f(x); }
+```
+
+```
+GLIBC_2.2.5 { sqrtf; log10f; };
+GLIBC_2.27  { sqrtf; log10f; };
+GLIBC_2.29  { sqrtf; log10f; };
+GLIBC_2.43  { sqrtf; log10f; };
+```
+
+`gcc -shared -fPIC -nostartfiles -Wl,--version-script=version.map -Wl,-soname,libm-243-shim.so -lm`
+
+Then `patchelf --set-rpath '$ORIGIN/../lib' <file>` on every binary
++ library, and `patchelf --replace-needed libm.so.6 libm-243-shim.so
+<lib>` on the two .so files that need the shim. **SONAME-based
+replace, never absolute paths** — patchelf won't resolve
+`/home/axu/.local/lib/...` and silently fails.
+
+Result layout (everything under `~/.local/`, no sudo):
+
+```
+~/.local/bin/hyprpaper                    # Arch 0.8.4-8, RPATH=$ORIGIN/../lib
+~/.local/lib/libhyprlang.so.0.6.8
+~/.local/lib/libhyprutils.so.0.14.1       # DT_NEEDED libm-243-shim.so
+~/.local/lib/libhyprtoolkit.so.0.5.4      # DT_NEEDED libm-243-shim.so
+~/.local/lib/libhyprwire.so.0.3.1
+~/.local/lib/libstdc++.so.6.0.36          # Arch GLIBCXX_3.4.36
+~/.local/lib/libm-243-shim.so             # 14 KB math shim
+~/.local/bin/hyprpaper-ws-switch.py       # IPC listener (~60 lines)
+```
+
+#### hyprpaper 0.8.4 IPC reality check
+
+The old syntax is dead in 0.8.4:
+
+| Syntax | Status |
+|---|---|
+| `wallpaper = ,path` (old triplet) | **removed** → `config option does not exist` |
+| `workspace = N, monitor:MON, default:IMG` | **removed** → no workspace binding |
+| `wallpaper { monitor = M; path = P; }` | ✅ the only static syntax |
+| `fit = 0 / 1 / 2 / 3` inside the block | **removed** → only `monitor` + `path` accepted |
+| `preload IMG`, `unload all`, `listloaded` | **removed** → IPC only has `listactive` + `wallpaper` |
+
+Live switching **must** go through IPC: `hyprctl hyprpaper wallpaper
+"<monitor>,<path>"`. Hyprland's `socket2.sock` stream emits
+`workspacev2>>ID,NAME` events that drive the listener.
+
+#### What gets installed
+
+```bash
+# 1. Fetch 6 Arch packages (5 extra + 1 core) from
+#    mirrors.tuna.tsinghua.edu.cn, SHA256-verify against extra.db/core.db
+# 2. Extract to ~/.local with tar --strip-components=1
+# 3. Build math shim → ~/.local/lib/libm-243-shim.so
+# 4. patchelf RPATH + libm-243-shim.so NEEDED on the two .so files
+# 5. Write pools, conf, listener (autostart entries below)
+#
+# ~/.config/hypr/hyprpaper.conf — initial wallpaper for ws2
+# ~/bin/hyprpaper-ws-switch.py       — Python IPC listener
+# ~/.config/autostart/hyprpaper-autostart.desktop
+# ~/.config/autostart/hyprpaper-ws-switch-autostart.desktop
+#
+# system-xdg-autostart-generator(8) mints:
+#   app-hyprpaper\x2dautostart@autostart.service
+#   app-hyprpaper\x2dws\x2dswitch\x2dautostart@autostart.service
+```
+
+`wpaperd` is not uninstalled — step 74 just moves its autostart
+desktop to `.disabled-step74` and stops the live service so it no
+longer races hyprpaper for the wallpaper slot. Restoring the old
+behaviour is a one-liner:
+
+```bash
+mv ~/.config/autostart/wpaperd-autostart.desktop.disabled-step74 \
+   ~/.config/autostart/wpaperd-autostart.desktop
+systemctl --user start app-wpaperd\x2dautostart@autostart.service
+```
+
+Manual controls:
+
+```bash
+hyprctl hyprpaper listactive                     # see current
+hyprctl hyprpaper wallpaper "eDP-1,/path/img"   # manual switch
+tail -f /tmp/ws-switch.log                       # IPC listener log
+pgrep -a -x hyprpaper                            # daemon PID
+```
+
+Hyprland-side: step 74 uncomments the `exec-once = hyprpaper` line
+in `~/.config/hypr/hyprland.conf` (left in place but disabled by
+step 73 when wpaperd was the active daemon).
+
+#### Future work
+
+Once `hyprpaper ≥ 0.8.5` ships in trixie-backports with the
+image-swap use-after-free fixed, step 74 can simplify back to a
+plain `apt install hyprpaper` (no Arch download, no patchelf, no
+shim). Track https://github.com/hyprwm/hyprpaper/issues.
 
 ## The patches (the actual port)q
 
