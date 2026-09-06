@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# omarchy:summary=Show a fuzzy-finder TUI for picking manually-installed packages to be removed.
+# omarchy:requires-sudo=true
+
+# This is the omarchy-on-debian port: replaces the upstream pacman-based
+# picker with an equivalent apt-get one. The TUI feel (fzf multi-select +
+# preview) is identical; only the underlying package commands change.
+
+fzf_args=(
+  --multi
+  --preview 'dpkg -s {1} 2>/dev/null | head -20 || echo "(not installed: {1})"'
+  --preview-label='alt-p: toggle description, alt-j/k: scroll, tab: multi-select'
+  --preview-label-pos='bottom'
+  --preview-window 'down:65%:wrap'
+  --bind 'alt-p:toggle-preview'
+  --bind 'alt-d:preview-half-page-down,alt-u:preview-half-page-up'
+  --bind 'alt-k:preview-up,alt-j:preview-down'
+  --color 'pointer:red,marker:red'
+)
+
+# apt-mark showmanual is the Debian equivalent of `yay -Qqe`: lists only
+# packages the user installed by hand, not ones pulled in as dependencies.
+# `apt-mark` ships with `apt` itself, so no extra package is required.
+#
+# Use `dpkg-query -W -f='${Package}\n'` instead to include auto-pulled
+# packages too (matches `pacman -Qq` semantics). Default is showmanual
+# because that is what users generally expect when looking for things
+# to remove.
+pkg_names=$(apt-mark showmanual | sort | fzf "${fzf_args[@]}")
+
+if [[ -n $pkg_names ]]; then
+  # --purge maps to pacman -Rns's "remove + configs" behaviour: deletes
+  # /etc configuration files along with the package. Drop --purge to
+  # match `pacman -R`'s "keep configs" semantics.
+  echo "$pkg_names" | tr '\n' ' ' | xargs sudo apt-get remove --purge -y
+  omarchy-show-done
+fi

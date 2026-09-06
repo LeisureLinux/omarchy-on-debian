@@ -225,6 +225,41 @@ extras/menu-i18n/   zh-CN / zh-TW menu overlays, locale switcher, sparse-merge n
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the failure modes that cost  
 the most time — including the Quickshell crash-restart env-var trap.
 
+## Package management (apt, not pacman)
+
+The Omarchy menu drives every package install / remove through five core
+scripts. The Debian port re-implements all five against `apt` /
+`apt-cache` / `dpkg-query` / `apt-mark` without touching any of the 90+
+app-specific wrappers (`omarchy-install-spotify`,
+`omarchy-remove-brave`, etc.) — they all call `omarchy-pkg-add` /
+`omarchy-pkg-drop`, whose public interface is unchanged.
+
+| Upstream (pacman / yay) | Debian port (apt) | Role                                                                  |
+|-------------------------|-------------------|-----------------------------------------------------------------------|
+| `omarchy-pkg-install`   | apt-cache / fzf   | TUI: list every installable package → `apt-get install -y`            |
+| `omarchy-pkg-remove`    | apt-mark / fzf    | TUI: list manually-installed packages → `apt-get remove --purge -y`   |
+| `omarchy-pkg-add`       | apt-get           | Idempotent installer (`<pkg...>`)                                     |
+| `omarchy-pkg-drop`      | apt-get           | Idempotent remover  (`<pkg...>`)                                      |
+| `omarchy-pkg-missing`   | dpkg-query        | Predicate: 0 if any `<pkg...>` is not installed                       |
+
+Debian-specific choices:
+
+- `apt-cache pkgnames` ↔ `pacman -Slq` (list every available package).
+  Comes from **apt-utils**, which Debian does not install by default; the
+  port ensures it via `steps/68-pkg-apt.sh`.
+- `apt-cache show` ↔ `pacman -Sii` (TUI preview). About 8× faster than
+  `apt show` on a populated cache and works offline.
+- `apt-mark showmanual` ↔ `yay -Qqe` (manually installed set, exclude
+  auto-pulled dependencies). Ships with `apt`, no extra package needed.
+- `dpkg-query -f='${Package}\n' -W` ↔ `pacman -Qq` (total installed set).
+- `apt-get install` is already idempotent (no `--needed`-equivalent flag).
+- `apt-get remove --purge -y` ↔ `pacman -Rns`. Drop `--purge` to match
+  `pacman -R` and keep `/etc` configurations across a removal.
+
+If you want to roll a single host back to the upstream (pacman) scripts
+manually, `steps/68` saves them to
+`~/.local/share/omarchy/bin/.bak-20260906-pacman/` the first time it runs.
+
 ## Debian keybinding gaps (official shortcuts that need extra commands)
 
 The shipped `~/.config/hypr/hyprland.conf` mirrors Omarchy's official  

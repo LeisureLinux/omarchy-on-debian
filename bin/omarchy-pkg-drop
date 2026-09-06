@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# omarchy:summary=Remove the named Debian packages if they're installed (otherwise ignore).
+# omarchy:args=<packages...>
+# omarchy:requires-sudo=true
+
+# This is the omarchy-on-debian port: replaces pacman with apt-get. Public
+# interface unchanged, so all 90+ `omarchy-remove-X` wrappers continue
+# to call into this script without modification.
+
+installed=()
+declare -A installed_exact=()
+declare -A selected=()
+
+# dpkg-query -W lists every installed package name, one per line.
+# This is the Debian equivalent of `pacman -Qq`.
+while IFS= read -r package_name; do
+  installed_exact[$package_name]=1
+done < <(dpkg-query -f'${Package}\n' -W)
+
+for pkg in "$@"; do
+  if [[ -n ${installed_exact[$pkg]} && -z ${selected[$pkg]} ]]; then
+    installed+=("$pkg")
+    selected[$pkg]=1
+  fi
+done
+
+if (( ${#installed[@]} > 0 )); then
+  # --purge maps to pacman -Rns's "remove + configs" semantics. Drop
+  # --purge to preserve /etc files (matches `pacman -R` behaviour).
+  sudo apt-get remove --purge -y "${installed[@]}"
+fi

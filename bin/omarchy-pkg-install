@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# omarchy:summary=Show a fuzzy-finder TUI for picking new Debian packages to install.
+# omarchy:requires-sudo=true
+
+# This is the omarchy-on-debian port: replaces the upstream pacman-based
+# picker with an equivalent apt-get one. The interface (fzf multi-select
+# + preview) is identical; only the underlying package commands change.
+
+fzf_args=(
+  --multi
+  --preview 'apt-cache show {1} 2>/dev/null || echo "(no Debian package named \"{1}\")"'
+  --preview-label='alt-p: toggle description, alt-j/k: scroll, tab: multi-select'
+  --preview-label-pos='bottom'
+  --preview-window 'down:65%:wrap'
+  --bind 'alt-p:toggle-preview'
+  --bind 'alt-d:preview-half-page-down,alt-u:preview-half-page-up'
+  --bind 'alt-k:preview-up,alt-j:preview-down'
+  --color 'pointer:green,marker:green'
+)
+
+# apt-cache pkgnames is the Debian equivalent of `pacman -Slq`: every
+# installable package across all enabled apt sources. `apt-cache` comes
+# from apt-utils (added by omarchy-on-debian steps/68 as a safety belt).
+pkg_names=$(apt-cache pkgnames | fzf "${fzf_args[@]}")
+
+if [[ -n $pkg_names ]]; then
+  source omarchy-sudo-keepalive
+
+  # Convert newline-separated selections to space-separated for apt-get.
+  # `apt install` is already idempotent: if a package is already
+  # installed, it is skipped without error, so no `--needed` equivalent
+  # flag is required.
+  echo "$pkg_names" | tr '\n' ' ' | xargs sudo apt-get install -y
+  omarchy-show-done
+fi

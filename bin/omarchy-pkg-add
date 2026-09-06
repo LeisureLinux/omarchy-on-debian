@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# omarchy:summary=Install Debian packages if they are missing
+# omarchy:args=<packages...>
+# omarchy:examples=omarchy pkg add jq ripgrep
+# omarchy:requires-sudo=true
+
+# This is the omarchy-on-debian port: replaces pacman with apt-get. Public
+# interface unchanged, so all 90+ `omarchy-install-X` wrappers continue
+# to call into this script without modification.
+
+if omarchy-pkg-missing "$@"; then
+  if (( EUID == 0 )); then
+    apt-get install -y "$@" || exit 1
+  else
+    sudo apt-get install -y "$@" || exit 1
+  fi
+fi
+
+for pkg in "$@"; do
+  # Secondary check: apt-get exits 0 even when a package failed to
+  # install (e.g. virtual package, broken dep) so we verify the
+  # installed state after the fact. dpkg-query -W prints a one-line
+  # status string of the form "install ok installed" for a healthy
+  # install; any other value (or error) means we didn't actually get it.
+  if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q '^install ok installed$'; then
+    echo -e "\033[31mError: Package '$pkg' did not install\033[0m" >&2
+    exit 1
+  fi
+done
+
+exit 0
