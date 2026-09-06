@@ -15,7 +15,7 @@ usage() {
   cat <<EOF
 Usage: ./install.sh [options]
   --dry-run        show commands without changing anything
-  --only N         run only step N (10|20|30|40|50|60|70)
+  --only N         run only step N (10|20|30|40|50|60|65|66|67|68|69|70|71)
   --from N         start at step N
   --src PATH       local Omarchy checkout or tarball (default: clone $OMARCHY_REPO)
   --no-clock-zh    skip the Chinese lunar/term clock extra
@@ -41,7 +41,8 @@ export DRY_RUN WITH_CLOCK_ZH OMARCHY_SRC OMARCHY_HOME OMARCHY_WORK OMARCHY_REPO 
 
 STEPS=(steps/10-deps.sh steps/20-fetch.sh steps/30-deploy.sh steps/40-patch.sh
        steps/50-fonts.sh steps/60-hyprland.sh steps/65-about.sh steps/66-calculator.sh
-       steps/67-monitor-scaling.sh steps/68-pkg-apt.sh steps/69-show-desktop.sh steps/70-verify.sh)
+       steps/67-monitor-scaling.sh steps/68-pkg-apt.sh steps/69-show-desktop.sh
+       steps/70-bar-overlay.sh steps/71-verify.sh)
 
 log "omarchy-on-debian — target: $OMARCHY_HOME"
 [ "$DRY_RUN" = 1 ] && warn "dry run: nothing will be changed"
@@ -63,5 +64,5 @@ Next:
   1. Log out and back in (Hyprland autostart runs omarchy-port).
      Or start the shell now:  ~/.local/bin/omarchy-port &
   2. Super+D opens the Omarchy menu, Super+Alt+T the theme picker.
-  3. If anything looks off:  ./steps/70-verify.sh
+  3. If anything looks off:  ./steps/71-verify.sh
 EOF

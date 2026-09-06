@@ -17,8 +17,8 @@ cd omarchy-on-debian
 ./install.sh               # then run
 ```
 
-Then log out and back in. `Super+Space` opens the menu, `Super+Alt+T` the theme  
-picker. `./steps/70-verify.sh` prints a health table at any time.
+Then log out and back in. `Super+Space` opens the menu, `Super+Alt+T` the theme
+picker. `./steps/71-verify.sh` prints a health table at any time.
 
 ---
 
@@ -34,7 +34,8 @@ picker. `./steps/70-verify.sh` prints a health table at any time.
 | 50   | `steps/50-fonts.sh`    | Installs `omarchy.ttf` and forces `monospace` → Nerd Font.                                                                                             |
 | 60   | `steps/60-hyprland.sh` | Autostart, menu key, minimised-window workspace, About window rules.                                                                                   |
 | 65   | `steps/65-about.sh`    | The About screen: `/etc/fastfetch/config.jsonc`, the Omarchy logo, and the xdg-terminal-exec glue that makes the `org.omarchy.about` class resolvable. |
-| 70   | `steps/70-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
+| 70   | `steps/70-bar-overlay.sh` | Pin the Quickshell top bar to `WlrLayer.Overlay` so it stays visible above fullscreen windows. |
+| 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
@@ -222,7 +223,28 @@ extras/menu-i18n/   zh-CN / zh-TW menu overlays, locale switcher, sparse-merge n
 - The clock patch replaces `Model.js` wholesale. After an upstream update,  
   re-diff it rather than re-applying blindly.
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the failure modes that cost  
+## Top bar stays above fullscreen windows
+
+The upstream Omarchy 4 (Quattro) Quickshell bar (`Bar.qml`, namespace
+`omarchy-bar`) binds itself to `WlrLayer.Top` — Hyprland layer level 2. The
+**only** layer drawn above fullscreen windows is `WlrLayer.Overlay` (level 3),
+so pressing Super+F (any `dispatch fullscreen 1` path) hides the bar.
+
+`steps/70-bar-overlay.sh` rewrites the bar's layer assignment from `Top` to
+`Overlay`. After running it you must reload Quickshell for the change to
+take effect — `qs kill --path ~/.local/share/omarchy/shell`, then
+`~/.local/bin/omarchy-port &` (or just log out and back in). Hyprland does
+**not** need a reload.
+
+Verify the fix with `hyprctl layers` — `namespace: omarchy-bar` should appear
+under `Layer level 3 (overlay)`, not `Layer level 2 (top)`.
+
+Re-running `steps/30-deploy.sh` (e.g. after a `git pull` of omarchy-src)
+overwrites `Bar.qml` with upstream defaults. Re-apply this patch by running
+`bash steps/70-bar-overlay.sh` again — the marker comment makes it
+idempotent.
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the failure modes that cost
 the most time — including the Quickshell crash-restart env-var trap.
 
 ## Show desktop (Super+D) — port feature
