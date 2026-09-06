@@ -9,6 +9,18 @@ CONF="${HYPR_CONF:-$HOME/.config/hypr/hyprland.conf}"
 
 MARKER="# >>> omarchy-on-debian"
 BLOCK="$MARKER
+# CRITICAL: Hyprland's own PATH does NOT include ~/.local/share/omarchy/bin
+# (where every omarchy-* script lives), so any bind calling omarchy-menu /
+# omarchy-shell / omarchy-capture-* / omarchy-hyprland-* silently no-ops.
+# Prepend it here so the official keybindings resolve.
+env = PATH, \$HOME/.local/share/omarchy/bin:\$HOME/.local/bin:\$PATH
+
+# Omarchy shell (Quickshell) root. omarchy-menu / omarchy-shell use `qs ipc -p
+# \$OMARCHY_PATH/shell`, so without this every menu/panel bind fails with
+# "OMARCHY_PATH is not set". Must live on Hyprland's own env — exports from the
+# exec-once omarchy-port do NOT reach Hyprland-spawned child processes.
+env = OMARCHY_PATH, \$HOME/.local/share/omarchy
+
 # Autostart the shell (replaces waybar/mako — comment those out yourself)
 exec-once = \$HOME/.local/bin/omarchy-port
 
