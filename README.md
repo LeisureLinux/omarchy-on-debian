@@ -17,7 +17,7 @@ cd omarchy-on-debian
 ./install.sh               # then run
 ```
 
-Then log out and back in. `Super+D` opens the menu, `Super+Alt+T` the theme
+Then log out and back in. `Super+Space` opens the menu, `Super+Alt+T` the theme
 picker. `./steps/70-verify.sh` prints a health table at any time.
 
 ---
@@ -219,6 +219,72 @@ extras/menu-i18n/   zh-CN / zh-TW menu overlays, locale switcher, sparse-merge n
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the failure modes that cost
 the most time — including the Quickshell crash-restart env-var trap.
+
+## Debian keybinding gaps (official shortcuts that need extra commands)
+
+The shipped `~/.config/hypr/hyprland.conf` mirrors Omarchy's official
+keybindings (from `omarchy-src/manual/07-hotkeys.md`). Most work out of the
+box because the `omarchy-*` scripts live in `~/.local/share/omarchy/bin`, which
+the config prepends to Hyprland's PATH (`env = PATH, …`). A few shortcuts still
+need extra commands Debian does not install by default — listed below, each
+with the one-line install that closes the gap.
+
+### Missing system tools
+
+| Shortcut(s) | Function | Missing command | Install to fix |
+|---|---|---|---|
+| `XF86MonBrightnessUp/Down`, `Shift`+…, `Alt`+… ; `XF86KbdBrightness*` | Screen / keyboard backlight | `brightnessctl` (or `light`) | `apt install brightnessctl` |
+| `XF86AudioNext/Prev/Play/Pause`, `Alt`+`XF86AudioPlay`, `Shift`+`XF86AudioPlay/Pause` | Media playback / source switch | `playerctl` | `apt install playerctl` |
+| `Super+Ctrl+V` | Clipboard manager (history) | `cliphist` | `apt install cliphist` |
+| `Super+C` / `Super+V` / `Super+X` | Universal copy / paste / cut (injects `Ctrl+C/V/X` into the focused window) | `wtype` (or `ydotool`) | `apt install wtype` |
+| `Super+Print` | Color picker | `hyprpicker` | `apt install hyprpicker` (trixie-backports) |
+| `Super+Ctrl+Print` | OCR text extraction to clipboard | `tesseract` | `apt install tesseract-ocr` |
+| `Alt+Print` | Screen recording | `wf-recorder` | `apt install wf-recorder` |
+
+Until installed, pressing these does nothing (the `omarchy-*` wrapper runs but
+its backend binary is absent). Volume keys (`XF86AudioRaise/Lower/Mute`) work
+without `playerctl` — they go through `omarchy-audio-output-volume` → `wpctl`,
+which is present.
+
+### Missing applications (the launch script exists; the app does not)
+
+| Shortcut | Function | App | How to install |
+|---|---|---|---|
+| `Super+Shift+M` | Music (Spotify) | `spotify` | Flatpak / spotify.com `.deb` |
+| `Super+Shift+Alt+M` | Music TUI (cliamp) | `cliamp` | not packaged; build from source |
+| `Super+Shift+G` | Messenger (Signal) | `signal-desktop` | signal.org `.deb` or Flatpak |
+| `Super+Shift+D` | Docker (LazyDocker) | `lazydocker` | `go install github.com/jesseduffield/lazydocker@latest` |
+| `Super+Shift+/` | Passwords (1Password) | `1password` | 1password.com `.deb` |
+| `Super+Shift+W` | Writing (Omawrite) | `omawrite` | not packaged |
+| `Super+Shift+Ctrl+A` | Pick an AI agent | `omarchy-agent` backend | needs the agent configured |
+
+Web-app shortcuts (`Super+Shift+A` ChatGPT, `Super+Shift+C/E` HEY calendar/email,
+`Super+Shift+Y` YouTube, `Super+Shift+X` / `X Compose`, `Super+Shift+G` /
+`Alt+G` / `Shift+Ctrl+G` WhatsApp / Google Messages, `Super+Shift+P` Photos,
+`Super+Shift+S` Maps) **do work** — they open the URL in your browser via
+`omarchy-launch-or-focus-webapp`. They only fail if no browser is installed.
+
+### Omarchy-Lua-only features with no native equivalent
+
+- **Cursor zoom** (`Super+Ctrl+Z` / `Super+Ctrl+Alt+Z`): Omarchy sets
+  `cursor.zoom_factor` through its Lua engine. There is no native Hyprland bind,
+  so these are intentionally not mapped.
+- **Jump to a specific window inside a group** (`Super+Alt+1..5`): native
+  Hyprland has no per-index group navigation, so these are bound to cycle
+  forward (`changegroupactive f`) as an approximation.
+
+### Hyprland-build deviations (Debian Hyprland 0.55.2)
+
+Two official dispatchers are not dispatchable on this Hyprland build, so the
+config maps them to the closest working form:
+
+- **`Super+J`** (toggle split): official `togglesplit` is not a callable
+  dispatcher here → mapped to `layoutmsg togglesplit`.
+- **Move-to-scratchpad without following** (`Super+Alt+S` / `Super+Shift+\``):
+  official `movetoworkspace silent special:scratchpad` is invalid here → mapped
+  to `movetoworkspacesilent special:scratchpad`.
+- **Move to workspace without following** (`Super+Shift+Alt+1..0`): same →
+  `movetoworkspacesilent <n>`.
 
 ## Upstream
 
