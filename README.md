@@ -238,13 +238,20 @@ with the one-line install that closes the gap.
 | `Super+Ctrl+V` | Clipboard manager (history) | `cliphist` | `apt install cliphist` |
 | `Super+C` / `Super+V` / `Super+X` | Universal copy / paste / cut (injects `Ctrl+C/V/X` into the focused window) | `wtype` (or `ydotool`) | `apt install wtype` |
 | `Super+Print` | Color picker | `hyprpicker` | `apt install hyprpicker` (trixie-backports) |
-| `Super+Ctrl+Print` | OCR text extraction to clipboard | `tesseract` | `apt install tesseract-ocr` |
+| `Super+Ctrl+Print` | OCR text extraction to clipboard | `tesseract` is **installed** but its language data (`tessdata`) is **missing** | `apt install tesseract-ocr-eng` (or `tessdata-*` for other languages) |
 | `Alt+Print` | Screen recording | `wf-recorder` | `apt install wf-recorder` |
+| `Super+Ctrl+Q`, `XF86Calculator` | Calculator | `qalc` (or `galculator`) **and** the `omacalc` wrapper (not shipped by this port yet) | `apt install qalc` (wrapper pending — see note below) |
+| `Super+Print` (copy to clipboard) | Screenshot → clipboard | `wl-clipboard` (`wl-copy`) | `apt install wl-clipboard` |
 
 Until installed, pressing these does nothing (the `omarchy-*` wrapper runs but
 its backend binary is absent). Volume keys (`XF86AudioRaise/Lower/Mute`) work
 without `playerctl` — they go through `omarchy-audio-output-volume` → `wpctl`,
 which is present.
+
+**Calculator:** `omacalc` is Omarchy's wrapper script (normally
+`~/.local/bin/omacalc`); this port does not generate it yet, so `Super+Ctrl+Q`
+has nothing to launch even after `apt install qalc`. Port TODO — tracked
+separately from the Debian command gap.
 
 ### Missing applications (the launch script exists; the app does not)
 
@@ -279,7 +286,8 @@ Two official dispatchers are not dispatchable on this Hyprland build, so the
 config maps them to the closest working form:
 
 - **`Super+J`** (toggle split): official `togglesplit` is not a callable
-  dispatcher here → mapped to `layoutmsg togglesplit`.
+  dispatcher here → mapped to `layoutmsg, togglesplit` (comma-separated; a
+  space makes Hyprland treat the whole string as one dispatcher name).
 - **Move-to-scratchpad without following** (`Super+Alt+S` / `Super+Shift+\``):
   official `movetoworkspace silent special:scratchpad` is invalid here → mapped
   to `movetoworkspacesilent special:scratchpad`.
