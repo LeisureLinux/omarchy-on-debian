@@ -54,24 +54,30 @@ mkdir -p "$HOME/.local/bin"
 ln -sf "$HOME/.cargo/bin/wpaperd"  "$HOME/.local/bin/wpaperd"
 ln -sf "$HOME/.cargo/bin/wpaperctl" "$HOME/.local/bin/wpaperctl"
 
-# User systemd unit.
-UNIT_DIR="$HOME/.config/systemd/user"
-mkdir -p "$UNIT_DIR"
-cat > "$UNIT_DIR/wpaperd.service" <<UNIT
-[Unit]
-Description=wpaperd — Wayland wallpaper daemon with rotation
-After=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=$HOME/.local/bin/wpaperd
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-UNIT
+# XDG-Autostart .desktop (matches budgie-wallstreet `app-wallstreet\x2dautostart@autostart.service`)
+# We DO NOT hand-write ~/.config/systemd/user/wpaperd.service — the
+# systemd-xdg-autostart-generator(8) takes care of that. Putting a
+# wpaperd.desktop in ~/.config/autostart/ makes systemd mint
+#   app-wpaperd\x2dautostart@autostart.service
+# at every user session start, with the same anatomy as ghostty,
+# blueman-applet, krita etc. This keeps the systemd tree clean and
+# gives us X-MATE-AutoRestart / X-GNOME-AutoRestart semantics for free.
+AUTOSTART_DIR="$HOME/.config/autostart"
+mkdir -p "$AUTOSTART_DIR"
+cat > "$AUTOSTART_DIR/wpaperd-autostart.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=wpaperd
+GenericName=Wayland Wallpaper Daemon
+Comment=Rotates background images per output (declared in ~/.config/wpaperd/wallpaper.toml)
+Exec=$HOME/.local/bin/wpaperd
+Terminal=false
+NoDisplay=true
+X-MATE-AutoRestart=true
+X-GNOME-AutoRestart=true
+Categories=Utility;
+DESKTOP
+log "  wrote $AUTOSTART_DIR/wpaperd-autostart.desktop (generator → app-wpaperd\\x2dautostart@autostart.service)"
 
 # Comment out hyprpaper exec-once — wpaperd owns the wallpaper slot.
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
@@ -145,6 +151,6 @@ BIND
   log "  added Super+Shift+W / Super+Shift+Ctrl+W binds in $HYPR_CONF"
 fi
 
-log "  enable with: systemctl --user daemon-reload && systemctl --user enable --now wpaperd.service"
+log "  generator creates app-wpaperd\\x2dautostart@autostart.service at every user session start"
 log "  cycle manually: omarchy-wallpaper-rotate next / prev / pause / status"
 log "  keybinds: Super+Shift+W = next, Super+Shift+Ctrl+W = prev"

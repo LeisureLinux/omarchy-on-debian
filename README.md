@@ -37,7 +37,7 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 70   | `steps/70-bar-overlay.sh` | Pin the Quickshell top bar to `WlrLayer.Overlay` so it stays visible above fullscreen windows. |
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 | 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
-| 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes a default `~/.config/wpaperd/wallpaper.toml`, a systemd user unit, comments out the `hyprpaper` exec-once. |
+| 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes an XDG autostart entry so `systemd-xdg-autostart-generator` mints `app-wpaperd\x2dautostart@autostart.service` (same shape as `app-wallstreet\x2dautostart@autostart.service`), a default `~/.config/wpaperd/wallpaper.toml`, comments out the `hyprpaper` exec-once. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
@@ -127,10 +127,26 @@ Step 73 also:
 
 - pins `wpad.lan → 127.0.0.1` in `/etc/hosts` (libproxy's PAC auto-detect
   otherwise eats 30 s per `cargo build` cycle),
-- writes a `wpaperd.service` to `~/.config/systemd/user/` and enables it,
+- installs via XDG autostart rather than a hand-written service — it writes
+  `~/.config/autostart/wpaperd-autostart.desktop`. The
+  `systemd-xdg-autostart-generator(8)` reads that file at every user-session
+  start and mints the same `app-wpaperd\x2dautostart@autostart.service` you
+  see for `app-wallstreet\x2dautostart@autostart.service`,
+  `app-com.mitchellh.ghostty.service`, `app-blueman@autostart.service`, etc.
+  No `~/.config/systemd/user/wpaperd.service` is written,
 - comments out `exec-once = hyprpaper` in `hyprland.conf`,
 - appends `Super+Shift+W → next` and `Super+Shift+Ctrl+W → prev` to
   `hyprland.conf`.
+
+The actual unit (live, generated):
+
+```
+$ systemctl --user status app-wpaperd\\x2dautostart@autostart.service
+● app-wpaperd\x2dautostart@autostart.service - wpaperd
+     Loaded: loaded (/home/axu/.config/autostart/wpaperd-autostart.desktop; generated)
+     Active: active (running) since ...
+   Main PID: <wpaperd>
+```
 
 Use the wrapper for everything else:
 
