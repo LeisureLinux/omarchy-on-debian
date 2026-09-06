@@ -96,22 +96,34 @@ Omarchy uses a single static wallpaper (`hyprpaper`). If you'd rather
 have a folder rotate every 15 minutes — the closest equivalent to
 Budgie's `budgie-wallstreet` — step 73 installs `wpaperd`.
 
+Step 73 detects whether your daily Bing pull is already filling the
+XDG `backgrounds` pool. If `~/.local/share/backgrounds/` already has
+`.jpg`s in it (very likely if you run `bing-image.timer`), the
+generated `wallpaper.toml` points there instead of seeding a new
+`~/Pictures/wallpapers/`. Pool topology:
+
+```toml
+[default]
+duration        = "5m"
+mode            = "fit"
+sorting         = "random"
+transition_time = 1000     # 1s fade
+
+[any]                                   # every monitor not listed below
+path = "$HOME/.local/share/backgrounds"
+
+[eDP-1]                                 # laptop built-in
+duration = "5m"
+path = "$HOME/.local/share/backgrounds"
+
+[DP-4]                                  # external (when connected)
+duration = "10m"                        # less per-minute churn on a big panel
+path = "$HOME/.local/share/backgrounds/widescreen"   # independent sub-pool
 ```
-[default]                # 共享给所有 display
-duration = "15m"
-sorting = "random"
-mode = "fit"
-transition_time = 1000   # 1s 淡入淡出
 
-[any]                    # 任何没显式列出的 display 走这里
-path = "$HOME/Pictures/wallpapers"
-
-[DP-4]                   # 副屏 27"
-path = "$HOME/Pictures/wallpapers"
-
-[eDP-1]                  # 笔记本内嵌
-path = "$HOME/Pictures/wallpapers"
-```
+The two pools share by default (`any` + `eDP-1`); the external pool
+is independent so you can manually curate 16:9 / 21:9-friendly picks
+into `widescreen/` without disturbing the laptop rotation.
 
 wpaperd 1.0.1 config quirks worth knowing before you start hacking:
 
@@ -136,7 +148,14 @@ Step 73 also:
   No `~/.config/systemd/user/wpaperd.service` is written,
 - comments out `exec-once = hyprpaper` in `hyprland.conf`,
 - appends `Super+Shift+W → next` and `Super+Shift+Ctrl+W → prev` to
-  `hyprland.conf`.
+  `hyprland.conf`,
+- if `~/bin/getBingImage.sh` is on PATH and was hard-coding a
+  `wpad.lan:8888` proxy, it (a) backs up the user script to
+  `*.bak-YYYYMMDD`, (b) flips line 7 of the script to
+  `PROXY="${PROXY_OVERRIDE:-}"`, (c) drops
+  `~/bin/bing-image-wrapper.sh` (probe-based proxy injector), and
+  (d) wires `bing-image.service` to that wrapper via a drop-in
+  override so daily pulls keep working when wpad goes down.
 
 The actual unit (live, generated):
 
