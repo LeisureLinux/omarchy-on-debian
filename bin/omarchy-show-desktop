@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# omarchy-show-desktop — toggle: hide (or restore) every non-pinned,
+# non-fullscreen, mapped window on the *active* workspace by moving them
+# into Hyprland's special:hidden scratchpad. Press again to restore.
+#
+# State file: $XDG_STATE_HOME/omarchy/show-desktop.json (default
+# ~/.local/state/omarchy/show-desktop.json). Stores each hidden window's
+# `address` and the `workspace.name` it came from, so restore brings them
+# back to the correct workspace even if the user switched focus meanwhile.
+#
+# Defensive restore: only restores windows whose address is *still* on
+# special:hidden. Stale state (from a session reload or a manually-closed
+# window) is silently skipped.
+
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+STATE_FILE="$STATE_DIR/show-desktop.json"
+mkdir -p "$STATE_DIR"
+
+if [[ -f $STATE_FILE ]]; then
+  # ---- Restore path ----
+  count_total=$(jq 'length' "$STATE_FILE")
+
+  # Build a set of addresses currently parked on special:hidden, so we can
+  # skip any that no longer belong there (window closed, session reset, ...).
+  mapfile -t hidden_addrs < <(
+    hyprctl clients -j | \
+      jq -r '.[] | select(.workspace.name == "special:hidden") | .address'
+  )
+
+  restored=0
+  while IFS=$'\t' read -r addr ws; do
+    [[ -z $addr || -z $ws ]] && continue
+    # Only restore if this exact address is still on special:hidden.
+    skip=0
+    for h in "${hidden_addrs[@]}"; do
+      [[ $h == "$addr" ]] && { skip=1; break; }
+    done
+    (( skip == 0 )) && continue
+
+    hyprctl dispatch focuswindow "address:$addr" >/dev/null 2>&1 || continue
+    hyprctl dispatch movetoworkspace "$ws" >/dev/null 2>&1 || true
+    restored=$((restored + 1))
+  done < <(jq -r '.[] | "\(.address)\t\(.workspace)"' "$STATE_FILE")
+
+  rm -f "$STATE_FILE"
+  notify-send "Show desktop" "Restored $restored of $count_total window(s)" \
+              --expire-time=1500
+  exit 0
+fi
+
+# ---- Hide path ----
+# Hyprland 0.55 returns sentinel values (id=-1337, name="active") from
+# `activeworkspace -j` and from `monitors -j`'s `activeWorkspace`, so we
+# can't trust those. Derive the active workspace from `clients -j`: the
+# focused window has the smallest `focusHistoryID`, and its `workspace.id`
+# is what we want.
+active_id=$(hyprctl clients -j | jq '
+  [.[] | select(.mapped) | {ws: .workspace.id, fhid: .focusHistoryID}]
+  | sort_by(.fhid) | .[0].ws // empty')
+
+# Collect every window that is safe to hide:
+#   on active workspace, mapped, not already hidden, not pinned (always-on-top),
+#   not fullscreen.
+mapfile -t wins < <(
+  hyprctl clients -j | jq -c --argjson wid "$active_id" '
+    [ .[]
+        | select(.workspace.id == $wid)
+        | select(.mapped   == true)
+        | select(.hidden   == false)
+        | select(.pinned   == false)
+        | select(.fullscreen == 0)
+    ] | map({address, workspace: .workspace.name}) | .[]'
+)
+
+if [[ ${#wins[@]} -eq 0 ]]; then
+  notify-send "Show desktop" "Nothing to hide" --expire-time=1500
+  exit 0
+fi
+
+# Persist state BEFORE moving, so a crash mid-loop still leaves a valid file.
+# `jq -s .` slurps the per-window objects into a real JSON array (without
+# -s, `mapfile`+`printf` gives us N separate objects, not an array).
+printf '%s\n' "${wins[@]}" | jq -s '.' > "$STATE_FILE.tmp"
+mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+# Move them. Hyprland 0.55's `movetoworksilent` silently rejects
+# `special:hidden` ("Invalid dispatcher" — only `movetoworkspace` accepts
+# the special-workspace name), and `movetoworksilent` only operates on the
+# currently focused window anyway. So: focus each target, then move it.
+# `movetoworkspace` *will* follow focus into the now-empty special workspace,
+# but we restore focus to the workspace itself immediately after.
+for w in "${wins[@]}"; do
+  addr=$(jq -r '.address' <<<"$w")
+  hyprctl dispatch focuswindow "address:$addr" >/dev/null 2>&1
+  hyprctl dispatch movetoworkspace special:hidden >/dev/null 2>&1
+done
+
+# Leave focus on the workspace itself, not on a now-hidden window.
+hyprctl dispatch workspace name:active >/dev/null 2>&1 || true
+
+notify-send "Show desktop" \
+            "Hid ${#wins[@]} window(s) — press again to restore" \
+            --expire-time=1500

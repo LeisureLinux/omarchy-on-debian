@@ -225,6 +225,40 @@ extras/menu-i18n/   zh-CN / zh-TW menu overlays, locale switcher, sparse-merge n
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the failure modes that cost  
 the most time — including the Quickshell crash-restart env-var trap.
 
+## Show desktop (Super+D) — port feature
+
+Hyprland has no native window-minimize concept, so upstream Omarchy has no
+"show desktop" command. This port adds one:
+
+- **Bin**: `bin/omarchy-show-desktop` (Bash + `jq` + `hyprctl`).
+- **Bind**: `bind = $mainMod, D, exec, omarchy-show-desktop` (injected by
+  `steps/69-show-desktop.sh`). Super+D was unbound in the official layout.
+- **Toggle**: first press hides every non-pinned, non-fullscreen, mapped
+  window on the **active** workspace into Hyprland's `special:hidden`
+  scratchpad. Press again to restore the exact same set to their original
+  workspaces.
+- **State**: `$XDG_STATE_HOME/omarchy/show-desktop.json` (default
+  `~/.local/state/omarchy/show-desktop.json`). Defensive on restore: an
+  address is only moved back if it is *currently* still parked on
+  `special:hidden`, so stale state (closed window, session reset) is
+  silently skipped.
+- **Dependencies**: `jq` and `libnotify` (for `notify-send`). Both ship
+  in Debian's base; `steps/69` warns if either is missing.
+
+### Hyprland 0.55.2 caveats this script handles
+
+- `activeworkspace -j` and `monitors -j`'s `activeWorkspace` return
+  sentinels (`id=-1337, name="active"`) and **cannot** be trusted to give
+  the real active workspace. The script derives it from `clients -j` by
+  taking the window with the smallest `focusHistoryID`.
+- `movetoworksilent special:hidden` is rejected by 0.55.2 with
+  `Invalid dispatcher` (only `movetoworkspace special:hidden` works). The
+  script uses the non-silent variant and restores focus to the workspace
+  afterwards.
+- `togglespecialworkspace hidden` on 0.55.2 does **not** automatically
+  move the focused window into the special workspace — it just shows or
+  hides that workspace. So we move windows explicitly via `movetoworkspace`.
+
 ## Package management (apt, not pacman)
 
 The Omarchy menu drives every package install / remove through five core
