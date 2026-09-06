@@ -45,8 +45,6 @@ if [[ -f $STATE_FILE ]]; then
   done < <(jq -r '.[] | "\(.address)\t\(.workspace)"' "$STATE_FILE")
 
   rm -f "$STATE_FILE"
-  notify-send "Show desktop" "Restored $restored of $count_total window(s)" \
-              --expire-time=1500
   exit 0
 fi
 
@@ -75,7 +73,6 @@ mapfile -t wins < <(
 )
 
 if [[ ${#wins[@]} -eq 0 ]]; then
-  notify-send "Show desktop" "Nothing to hide" --expire-time=1500
   exit 0
 fi
 
@@ -99,7 +96,3 @@ done
 
 # Leave focus on the workspace itself, not on a now-hidden window.
 hyprctl dispatch workspace name:active >/dev/null 2>&1 || true
-
-notify-send "Show desktop" \
-            "Hid ${#wins[@]} window(s) — press again to restore" \
-            --expire-time=1500
