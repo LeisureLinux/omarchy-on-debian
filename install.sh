@@ -15,7 +15,7 @@ usage() {
   cat <<EOF
 Usage: ./install.sh [options]
   --dry-run        show commands without changing anything
-  --only N         run only step N (10|20|30|40|50|60|65|66|67|68|69|70|71|72)
+  --only N         run only step N (10|20|30|40|50|60|65|66|67|68|69|70|71|72|73)
   --from N         start at step N
   --src PATH       local Omarchy checkout or tarball (default: clone $OMARCHY_REPO)
   --no-clock-zh    skip the Chinese lunar/term clock extra

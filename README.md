@@ -37,6 +37,7 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 70   | `steps/70-bar-overlay.sh` | Pin the Quickshell top bar to `WlrLayer.Overlay` so it stays visible above fullscreen windows. |
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 | 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
+| 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes a default `~/.config/wpaperd/wallpaper.toml`, a systemd user unit, comments out the `hyprpaper` exec-once. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
@@ -86,6 +87,69 @@ feature appears after a shell restart.
 | `waybar`            | The Omarchy bar replaces it. If already installed, comment it out of `hyprland.conf` autostart or you get two bars. Step 60 warns but does not edit existing lines.                                                |
 | `uwsm` / `uwsm-app` | Not packaged for Debian. Upstream wraps every app launch in it; the `uwsm-app` shim in `dotfiles/` makes those launches plain `exec "$@"` instead.                                                                 |
 | Nerd Fonts          | Debian ships none. Step 10 downloads FiraCode Nerd Font to `~/.local/share/fonts` if no Ner1d Font is present.                                                                                                     |
+| `wpaperd`           | The default wallpaper daemon. We *do* install this in step 73 (via `cargo install`); it's listed here to flag that Debian trixie has no apt package for it. Future: `repo.freelamp.com` will carry a `.deb` built by `packaging/rust-crate-deb/build.sh`. |
+
+
+## Wallpaper rotation with `wpaperd`
+
+Omarchy uses a single static wallpaper (`hyprpaper`). If you'd rather
+have a folder rotate every 15 minutes — the closest equivalent to
+Budgie's `budgie-wallstreet` — step 73 installs `wpaperd`.
+
+```
+[default]                # 共享给所有 display
+duration = "15m"
+sorting = "random"
+mode = "fit"
+transition_time = 1000   # 1s 淡入淡出
+
+[any]                    # 任何没显式列出的 display 走这里
+path = "$HOME/Pictures/wallpapers"
+
+[DP-4]                   # 副屏 27"
+path = "$HOME/Pictures/wallpapers"
+
+[eDP-1]                  # 笔记本内嵌
+path = "$HOME/Pictures/wallpapers"
+```
+
+wpaperd 1.0.1 config quirks worth knowing before you start hacking:
+
+| Quirk | Why |
+|---|---|
+| Filename **must** be `wallpaper.toml` (legacy) | `place_config_file("wallpaper.toml")` runs before `place_config_file("config.toml")` in `main.rs`. The README says `config.toml` but the binary disagrees. |
+| Section names are monitor names directly | `[DP-4]`, `[eDP-1]` — *not* `[output.DP-4]`. The `output.` prefix is 0.x syntax. |
+| No `[socket]` section | The Unix socket path is hard-coded. |
+| No `transition_type` field | Only `transition_time` (ms). `transition_type` is a planned field on upstream main but not in 1.0.1. |
+| `apply-shadow`, `queue_size` exist | The 1.0.1 struct in `src/config.rs::SerializedWallpaperInfo` confirms. |
+
+Step 73 also:
+
+- pins `wpad.lan → 127.0.0.1` in `/etc/hosts` (libproxy's PAC auto-detect
+  otherwise eats 30 s per `cargo build` cycle),
+- writes a `wpaperd.service` to `~/.config/systemd/user/` and enables it,
+- comments out `exec-once = hyprpaper` in `hyprland.conf`,
+- appends `Super+Shift+W → next` and `Super+Shift+Ctrl+W → prev` to
+  `hyprland.conf`.
+
+Use the wrapper for everything else:
+
+```bash
+omarchy-wallpaper-rotate status        # daemon + current image
+omarchy-wallpaper-rotate next          # next wallpaper
+omarchy-wallpaper-rotate prev          # previous
+omarchy-wallpaper-rotate pause         # SIGSTOP wpaperd
+omarchy-wallpaper-rotate resume        # SIGCONT wpaperd
+omarchy-wallpaper-rotate set-folder /path/to/folder
+omarchy-wallpaper-rotate init          # write a default wallpaper.toml
+```
+
+The Rust toolchain itself is not in Debian trixie either, so the
+`packaging/rust-crate-deb/` template lives in this repo. Once
+`repo.freelamp.com` has a built `wpaperd_1.0.1_amd64.deb`, switch
+step 73 from `cargo install` to `apt install wpaperd` and the same
+template handles `swww`, `waypaper`, and any other Rust wallpaper
+tool you want to ship.
 
 `fc-list` and `apt-cache` output is locale-dependent — `apt-cache policy` prints  
 候选版本 under zh_CN, so step 10 parses it with `LC_ALL=C`.
