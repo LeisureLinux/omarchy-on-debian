@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# omacalc — Omarchy calculator (Debian port)
+#
+# The upstream omacalc is a small Qt/QML app (github.com/omacom-io/omacalc)
+# that opens a floating calculator window. On Debian we approximate it with a
+# rofi + qalc wrapper so the official `Super+Ctrl+Q` / `XF86Calculator`
+# bindings keep working without building the Qt app.
+#
+# Type an expression; the live result is shown in the rofi message line.
+# Press Enter to copy the result to the clipboard and keep editing (chain
+# calculations). Press Escape to close.
+
+set -uo pipefail
+
+if ! command -v rofi >/dev/null 2>&1; then
+  notify-send "omacalc" "rofi is not installed" 2>/dev/null
+  exit 1
+fi
+
+QALC="$(command -v qalc || true)"
+if [[ -z "$QALC" ]]; then
+  notify-send "omacalc" "qalc is not installed (apt install qalc)" 2>/dev/null
+  exit 1
+fi
+
+compute() {
+  # terse (-t) gives a clean single decimal result. Do NOT add -p/--precision:
+  # with higher precision qalc switches to a binary/octal/hex/decimal display
+  # for integer results, which is not what we want in the rofi message line.
+  "$QALC" -t -- "${1}" 2>/dev/null
+}
+
+expression=""
+while true; do
+  result="$(compute "$expression")"
+  choice="$(printf '' | rofi -dmenu -p "calc" -lines 0 \
+    -mesg "= ${result:-}" -filter "$expression" 2>/dev/null)"
+  rc=$?
+  # rofi: 0 = accepted, 1 (or other) = cancelled
+  if [[ $rc -ne 0 ]]; then
+    break
+  fi
+  if [[ -z "$choice" ]]; then
+    break
+  fi
+  expression="$choice"
+  if [[ -n "$result" ]]; then
+    printf '%s' "$result" | wl-copy 2>/dev/null || true
+  fi
+done
