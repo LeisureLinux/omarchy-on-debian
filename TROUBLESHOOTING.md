@@ -200,6 +200,99 @@ hyprctl clients -j | jq -r '.[] | select((.class // "") | test("omarchy.about"))
 
 ---
 
+## 13. Hyprland crashes the moment the screen locks
+
+Two pre-installed pieces of Debian trixie + Hyprland ecosystem software
+will crash Hyprland on every screen-lock. The pattern looks identical
+from the keyboard: Super+Ctrl+L → dim screen → black screen → compositior
+gone. If you `coredumpctl info <PID>` or read the journal, you get one
+of two death messages — both are covered below. Step 74 fixes both;
+this entry is the post-mortem for users who hit them before running
+step 74.
+
+### 13a. `xdg-desktop-portal-hyprland` SIGSEGV in `libwayland-client`
+
+```
+status=11 (SIGSEGV)
+RIP:  wl_proxy_marshal_array_flags+0x6d in libwayland-client.so.0.23.1
+Backtrace:
+  #4  xdg-desktop-portal-hyprland + 0xab446
+  #3  wl_proxy_marshal_flags
+  #2  wl_proxy_marshal_array_flags
+  #1  libwayland-client.so.0+0x6d50
+  #0  ...
+```
+
+`hyprlock` reaches for `wlr-screencopy` to fill its `path = screenshot`
+background. The request goes through `xdg-desktop-portal-hyprland`,
+which marshals a Wayland reply through `libwayland-client.so.0.23.1`
+and dereferences an invalid protocol object. The resulting crash
+takes the portal down and Hyprland's compositor with it (the dying
+portal leaves unsent replies on socket 2 that the compositior interprets
+as its own fault).
+
+Fix — mask the service so it never starts again:
+
+```bash
+systemctl --user mask xdg-desktop-portal-hyprland.service
+systemctl --user stop  xdg-desktop-portal-hyprland.service
+```
+
+Why is it even installed? Step 10's `xdg-desktop-portal-hyprland`
+package is for `flatpak`/`snap` apps that need it. You are not running
+flatpak on the native shell, and `xdg-desktop-portal` (the generic
+one) is still there to handle screen-sharing on demand. The Hyprland-
+specific one is a no-op in any case.
+
+### 13b. `pam_ecryptfs: seteuid error` from hyprlock
+
+```
+Hyprland caught signal 11 (SIGSEGV) ... hyprlock exited unexpectedly
+status=11 (SIGSEGV) in libsystemd ...
+audit: hyprlock auth=incomplete
+journalctl ... pam_ecryptfs(hyprlock:auth): seteuid error: Operation not permitted
+```
+
+The Debian `/etc/pam.d/hyprlock` package drop-in is just `include
+common-auth`. `common-auth` (auto-edited by `ecryptfs-utils` on
+install) contains `auth required pam_ecryptfs.so unwrap`. That
+module calls `setuid`/`setreuid` to unwrap your mount-passphrase
+from `~/.ecryptfs/wrapped-passphrase` — a file Debian creates when
+you opt into home-dir encryption. On the standard Debian install
+(plain ext4 home, no eCryptFS) the unwrap call returns
+`EPERM`. Hyprlock treats that as a hard authentication failure and
+**the compositior tears down the lock surface**.
+
+Replace the file with one that **only** does shadow auth:
+
+```bash
+sudo tee /etc/pam.d/hyprlock <<'EOF'
+# omarchy-on-debian override — drops pam_ecryptfs.so unwrap that
+# seteuid-errors on plain-ext4 home and crashes the compositior.
+auth     required    pam_unix.so nullok
+account  required    pam_unix.so
+EOF
+```
+
+Revert with `sudo cp /etc/pam.d/hyprlock.bak-omarchy-on-debian
+/etc/pam.d/hyprlock` (step 74 keeps a backup by that name).
+
+### 13c. Sanity after fixing both
+
+Run `./steps/71-verify.sh` — the `lock chain (step 74 time-bomb
+defusal)` section should both be `ok`:
+
+```
+==> lock chain (step 74 time-bomb defusal)
+  ok /etc/pam.d/hyprlock is the omarchy-on-debian override (pam_unix only)
+  ok xdg-desktop-portal-hyprland.service is masked (no screencopy segfault)
+```
+
+Then lock the screen, type your password, unlock. Repeat 10 times. If
+the compositior survives, you have closed out both time-bombs.
+
+---
+
 ## Useful commands
 
 ```bash

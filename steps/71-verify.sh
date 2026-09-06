@@ -22,15 +22,61 @@ soft  "wpctl (wireplumber)"    "command -v wpctl"
 soft  "nmcli"                  "command -v nmcli"
 soft  "gum"                    "command -v gum"
 soft  "brightnessctl"          "command -v brightnessctl"
-soft  "wpaperd"                "command -v wpaperd"
-soft  "wpaperctl"              "command -v wpaperctl"
-soft  "hyprpaper (Arch prebuilt)" "command -v $HOME/.local/bin/hyprpaper && ldd $HOME/.local/bin/hyprpaper | grep -q 'libstdc++.so.6 => $HOME/.local/lib'"
-soft  "hyprpaper-ws-switch.py" "[ -x '$HOME/bin/hyprpaper-ws-switch.py' ]"
-soft  "hyprpaper XDG autostart" "[ -f '$HOME/.config/autostart/hyprpaper-autostart.desktop' ] && [ -f '$HOME/.config/autostart/hyprpaper-ws-switch-autostart.desktop' ]"
-soft  "hyprpaper.conf"          "[ -f '$HOME/.config/hypr/hyprpaper.conf' ] && grep -q '^wallpaper' '$HOME/.config/hypr/hyprpaper.conf'"
-soft  "ws1..ws5 pools"          "for n in 1 2 3 4 5; do [ -d \"$HOME/Pictures/wallpapers/ws\$n\" ] || exit 1; done"
-soft  "GLIBC 2.43 math shim"    "[ -f '$HOME/.local/lib/libm-243-shim.so' ] && nm -D '$HOME/.local/lib/libm-243-shim.so' | grep -q 'sqrtf@GLIBC_2.43'"
+# Wallpaper stack — wpaperd carries the load (step 73); the per-workspace
+# switcher + state file + tooling all live under step 74.
+soft  "wpaperd"                "command -v wpaperd || command -v $HOME/.local/bin/wpaperd"
+soft  "wpaperctl"              "command -v wpaperctl || command -v $HOME/.local/bin/wpaperctl"
+soft  "wpaperd-ws-switch.py"   "[ -x '$HOME/bin/wpaperd-ws-switch.py' ]"
+soft  "wpaperd-ws state file"  "[ -f '$HOME/.local/state/wpaperd-ws-state.json' ]"
+soft  "ws1..ws5 pools"         "for n in 1 2 3 4 5; do [ -d \"$HOME/Pictures/wallpapers/ws\$n\" ] || exit 1; done"
 soft  "wallpaper-rotate wrap"  "[ -x '$OMARCHY_HOME/bin/omarchy-wallpaper-rotate' ] || [ -x '$HOME/.local/bin/omarchy-wallpaper-rotate' ] || [ -x '$HOME/.local/share/omarchy/bin/omarchy-wallpaper-rotate' ]"
+soft  "wpaperd running"        "pgrep -x wpaperd >/dev/null"
+soft  "ws-switcher running"    "pgrep -f '$HOME/bin/wpaperd-ws-switch.py' >/dev/null"
+
+log "lock chain (step 74 time-bomb defusal)"
+if [[ -f /etc/pam.d/hyprlock ]]; then
+  # Inspect the file *minus* its comments so the explanatory header
+  # in the omarchy-on-debian override doesn't trip the second grep.
+  non_comment="$(grep -vE '^\s*#' /etc/pam.d/hyprlock || true)"
+  if grep -q "^auth.*pam_unix" <<<"$non_comment" && ! grep -q "pam_ecryptfs" <<<"$non_comment"; then
+    ok "/etc/pam.d/hyprlock is the omarchy-on-debian override (pam_unix only)"
+  elif [[ -f /etc/pam.d/hyprlock.bak-omarchy-on-debian ]]; then
+    ok "/etc/pam.d/hyprlock was replaced (.bak present)"
+  else
+    err "/etc/pam.d/hyprlock still inherits pam_ecryptfs (compositor crash risk)"
+    FAIL=1
+  fi
+else
+  warn "/etc/pam.d/hyprlock absent (hyprlock not installed?)"
+fi
+if command -v systemctl >/dev/null; then
+  state="$(systemctl --user is-enabled xdg-desktop-portal-hyprland.service 2>&1 || true)"
+  if [[ "$state" == "masked" || "$state" == "static" ]]; then
+    ok "xdg-desktop-portal-hyprland.service is masked (no screencopy segfault)"
+  else
+    err "xdg-desktop-portal-hyprland.service is NOT masked — locks will crash"
+    FAIL=1
+  fi
+fi
+
+log "wallpaper config"
+if [[ -f "$HOME/.config/wpaperd/wallpaper.toml" ]]; then
+  if grep -q '^\[eDP-1\]' "$HOME/.config/wpaperd/wallpaper.toml"; then
+    ok "wpaperd config has [eDP-1] section"
+  else
+    warn "wpaperd config has no [eDP-1] section (external-only setup?)"
+  fi
+fi
+if [[ -f "$HOME/.config/hypr/hyprland.conf" ]]; then
+  if grep -qE '^exec-once *= *[/\$A-Za-z._-]*wpaperd' "$HOME/.config/hypr/hyprland.conf"; then
+    ok "hyprland.conf: exec-once = wpaperd (live daemon)"
+  else
+    warn "hyprland.conf missing exec-once = wpaperd (rely on XDG autostart only)"
+  fi
+  if grep -qE 'loginctl lock-session' "$HOME/.config/hypr/hyprland.conf"; then
+    ok "hyprland.conf: Super+Ctrl+L → loginctl lock-session"
+  fi
+fi
 
 log "deployment"
 check "omarchy payload"        "[ -d '$OMARCHY_HOME/shell' ] && [ -d '$OMARCHY_HOME/bin' ]"

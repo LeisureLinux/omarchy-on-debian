@@ -38,7 +38,7 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 | 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
 | 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes an XDG autostart entry so `systemd-xdg-autostart-generator` mints `app-wpaperd\x2dautostart@autostart.service` (same shape as `app-wallstreet\x2dautostart@autostart.service`), a default `~/.config/wpaperd/wallpaper.toml`, comments out the `hyprpaper` exec-once. |
-| 74   | `steps/74-workspace-wallpaper.sh` | Take per-workspace rotation one step further: hyprpaper is enabled as the active wallpaper daemon (Debian backports), `~/.config/hypr/hyprpaper.conf` is rewritten with one `workspace = N, monitor:MON, default:IMG` line per workspace, the Bing pool is sliced into `~/Pictures/wallpapers/ws{1..5}/`, and a systemd user timer (`hyprpaper-workspace-rotate.timer`, 5-min cadence) re-rolls each workspace's wallpaper independently. `wpaperd` is demoted (autostart desktop renamed to `.disabled-step74`, daemon stopped) but kept installed as a one-command fallback. |
+| 74   | `steps/74-workspace-wallpaper.sh` | **Silky per-workspace wallpapers via `wpaperd`**. Bins the `hyprpaper` daemon entirely (Cleanup §1 of the step removes every Arch-prebuilt artifact). `bin/wpaperd-ws-switch.py` is a Python IPC bridge that listens on Hyprland `socket2.sock` and rewrites `[eDP-1].path` in `wallpaper.toml` so each workspace shows **the image you last saw on it** (no random re-pick on switch). A background thread rotates the active workspace's image every 5 minutes, with `WPAPERD_TIMER=30` overridable for testing. The step also **defuses two compositor-crash time-bombs** that were killing Hyprland on every lock screen — `systemctl --user mask xdg-desktop-portal-hyprland.service` (screencopy SIGSEGV) and replacement of `/etc/pam.d/hyprlock` to drop the `pam_ecryptfs.so unwrap` that breaks `setuid`. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
@@ -59,7 +59,11 @@ Step 10 installs three groups. Nothing is removed — it only ever adds.
 
 `quickshell`, `hyprland` and `xdg-desktop-portal-hyprland` come from  
 `trixie-backports`, which the step adds with `Pin-Priority: 100` — backports  
-only fills gaps, it never upgrades stable packages.
+only fills gaps, it never upgrades stable packages. **Step 74 masks
+`xdg-desktop-portal-hyprland.service`** because on Debian + Hyprland it
+SIGSEGVs during `wlr-screencopy` (see `TROUBLESHOOTING.md §13a`). If
+you actually rely on Flatpak/Snap apps for screen capture, unmask it
+later with `systemctl --user unmask xdg-desktop-portal-hyprland.service`.
 
 **Optional** (installed if the repo carries them; each gates a feature, and the  
 shell hides the entry when the binary is missing — no errors, just an absent  
@@ -187,158 +191,215 @@ step 73 from `cargo install` to `apt install wpaperd` and the same
 template handles `swww`, `waypaper`, and any other Rust wallpaper
 tool you want to ship.
 
-### Per-workspace rotation with `hyprpaper` (step 74)
+### Per-workspace rotation with `wpaperd` (step 74)
 
-`wpaperd` only rotates per monitor, so step 74 takes over with
-`hyprpaper` — but **not** the Debian trixie-backports 0.8.4 build
-(that one segfaults on this stack). Step 74 fetches the Arch
-`extra`/`core` prebuilt packages instead and stitches them onto
-Debian trixie via three small patchelf tricks.
-
-Each Hyprland workspace gets its own pool, and a Python IPC listener
-switches the wallpaper whenever you change workspace — no polling
-delay, no systemd timer.
-
-The pool topology:
+`wpaperd` rotates per monitor — it has no concept of workspaces.
+Step 74 attaches a small in-house Python listener,
+[`bin/wpaperd-ws-switch.py`](bin/wpaperd-ws-switch.py), that drives the
+per-workspace behaviour on top.
 
 ```
-~/.local/share/backgrounds/        ← Bing timer drops here (shared)
-~/Pictures/wallpapers/ws1/         ← ChateauLoire.jpg   (DP-4  when present)
-~/Pictures/wallpapers/ws2/         ← DuckPond.jpg       (eDP-1)
-~/Pictures/wallpapers/ws3/         ← ElephantDay.jpg    (eDP-1)
-~/Pictures/wallpapers/ws4/         ← IbizaIslets.jpg    (eDP-1)
-~/Pictures/wallpapers/ws5/         ← IcelandSheep.jpg   (eDP-1)
+Hyprland socket2 (workspacev2>>ID,NAME)
+        │
+        ▼
+   wpaperd-ws-switch.py  ──── reads ID ────►  state[ID] image path
+        │                       ▲                  │
+        │                       │                  ▼
+   │  wpaperctl reload-wallpaper │   writes [eDP-1].path = state[ID]
+   ▼                       every 5 min ── pick a different image
+wpaperd shows the image on eDP-1 (single-file mode)
 ```
 
-When a workspace is focused, `~/bin/hyprpaper-ws-switch.py` reads the
-first `.jpg` in its pool and tells hyprpaper via IPC.
+#### Three rules the engine relies on
 
-#### Why Arch binaries instead of the Debian trixie-backports build?
-
-`hyprpaper 0.8.4-1~bpo13+1` (Debian trixie-backports, GCC 14.2)
-segfaults after the second `hyprctl hyprpaper wallpaper` IPC call on
-this stack — coredumpctl shows status=11 (SEGV) in image-swap,
-root-caused to a use-after-free that disappears with GCC 16's
-codegen. Arch `extra` carries `hyprpaper-0.8.4-8-x86_64.pkg.tar.zst`
-(GCC 16 build); verified on 2026-09-06 across 10 consecutive
-workspace switches with the daemon PID stable.
-
-#### The three patchelf tricks
-
-The Arch package is x86-64 glibc 2.44, but our Debian trixie is
-glibc 2.41, libstdc++ 6.0.33. The binary's imports tell us what to
-patch:
-
-| Symbol requirement | Comes from | Patch |
-|---|---|---|
-| `GLIBCXX_3.4.36` (libstdc++) | Arch `core/libstdc++-16.2.1` | Private copy to `~/.local/lib/libstdc++.so.6.0.36` + symlink |
-| `GLIBC_2.43` (`sqrtf`, `log10f`) on `libhyprutils.so.0.14.1` + `libhyprtoolkit.so.0.5.4` | glibc 2.44 | Custom 14 KB math shim (`shim.c` self-recursive + `version.map`) |
-| `hyprpaper` binary itself | (no GLIBC 2.43 import) | RPATH only, no shim |
-
-`objdump -T` is the source of truth for who imports what — checking
-just `DT_NEEDED` misses transitive imports. The shim is tiny:
-
-```c
-float  sqrtf(float x)  { return sqrtf(x);  }   /* self-recursive */
-float  log10f(float x) { return log10f(x); }
-```
-
-```
-GLIBC_2.2.5 { sqrtf; log10f; };
-GLIBC_2.27  { sqrtf; log10f; };
-GLIBC_2.29  { sqrtf; log10f; };
-GLIBC_2.43  { sqrtf; log10f; };
-```
-
-`gcc -shared -fPIC -nostartfiles -Wl,--version-script=version.map -Wl,-soname,libm-243-shim.so -lm`
-
-Then `patchelf --set-rpath '$ORIGIN/../lib' <file>` on every binary
-+ library, and `patchelf --replace-needed libm.so.6 libm-243-shim.so
-<lib>` on the two .so files that need the shim. **SONAME-based
-replace, never absolute paths** — patchelf won't resolve
-`/home/axu/.local/lib/...` and silently fails.
-
-Result layout (everything under `~/.local/`, no sudo):
-
-```
-~/.local/bin/hyprpaper                    # Arch 0.8.4-8, RPATH=$ORIGIN/../lib
-~/.local/lib/libhyprlang.so.0.6.8
-~/.local/lib/libhyprutils.so.0.14.1       # DT_NEEDED libm-243-shim.so
-~/.local/lib/libhyprtoolkit.so.0.5.4      # DT_NEEDED libm-243-shim.so
-~/.local/lib/libhyprwire.so.0.3.1
-~/.local/lib/libstdc++.so.6.0.36          # Arch GLIBCXX_3.4.36
-~/.local/lib/libm-243-shim.so             # 14 KB math shim
-~/.local/bin/hyprpaper-ws-switch.py       # IPC listener (~60 lines)
-```
-
-#### hyprpaper 0.8.4 IPC reality check
-
-The old syntax is dead in 0.8.4:
-
-| Syntax | Status |
+| Rule | Why |
 |---|---|
-| `wallpaper = ,path` (old triplet) | **removed** → `config option does not exist` |
-| `workspace = N, monitor:MON, default:IMG` | **removed** → no workspace binding |
-| `wallpaper { monitor = M; path = P; }` | ✅ the only static syntax |
-| `fit = 0 / 1 / 2 / 3` inside the block | **removed** → only `monitor` + `path` accepted |
-| `preload IMG`, `unload all`, `listloaded` | **removed** → IPC only has `listactive` + `wallpaper` |
+| **Single-file `[eDP-1].path`** | `wpaperd` in directory mode with `sorting = "random"` re-picks every reload — fine for the per-monitor case, but jarring per-workspace. We pin `[eDP-1].path` to a single absolute image path and let the switcher rewrite it on every workspacev2 event. No random re-pick → **丝滑**. |
+| **`state[ws] = "/abs/path/to/img.jpg"`** | Persisted in `~/.local/state/wpaperd-ws-state.json`. On every workspace change the listener reads `state[ID]` and pushes it to `[eDP-1].path`. When you switch back to a workspace you saw earlier, you see exactly that image again, not a random new one. |
+| **5-minute timer picks a *different* image** | A background thread wakes every `TIMER_PERIOD` (default 300 s; override with `WPAPERD_TIMER=30 python3 ~/bin/wpaperd-ws-switch.py` for testing) and picks an image from `~/Pictures/wallpapers/ws{ACTIVE_ID}/` that is **not** `state[ACTIVE_ID]`. The state file and `[eDP-1].path` are updated; `wpaperctl reload-wallpaper` makes wpaperd show the new image. Other workspaces stay frozen until you visit them. |
 
-Live switching **must** go through IPC: `hyprctl hyprpaper wallpaper
-"<monitor>,<path>"`. Hyprland's `socket2.sock` stream emits
-`workspacev2>>ID,NAME` events that drive the listener.
+The `state` file is durable across reboots; the watcher reconnects
+to `socket2.sock` automatically when Hyprland restarts (1 s → 2 s →
+… → 30 s exponential backoff).
 
-#### What gets installed
+#### Pool topology
 
 ```bash
-# 1. Fetch 6 Arch packages (5 extra + 1 core) from
-#    mirrors.tuna.tsinghua.edu.cn, SHA256-verify against extra.db/core.db
-# 2. Extract to ~/.local with tar --strip-components=1
-# 3. Build math shim → ~/.local/lib/libm-243-shim.so
-# 4. patchelf RPATH + libm-243-shim.so NEEDED on the two .so files
-# 5. Write pools, conf, listener (autostart entries below)
-#
-# ~/.config/hypr/hyprpaper.conf — initial wallpaper for ws2
-# ~/bin/hyprpaper-ws-switch.py       — Python IPC listener
-# ~/.config/autostart/hyprpaper-autostart.desktop
-# ~/.config/autostart/hyprpaper-ws-switch-autostart.desktop
-#
-# system-xdg-autostart-generator(8) mints:
-#   app-hyprpaper\x2dautostart@autostart.service
-#   app-hyprpaper\x2dws\x2dswitch\x2dautostart@autostart.service
+~/.local/share/backgrounds/            ← Bing daily pull (shared pool)
+~/Pictures/wallpapers/ws1/             ← symlinks into the shared pool
+~/Pictures/wallpapers/ws2/             ← ws2 is the default workspace at
+~/Pictures/wallpapers/ws3/                first Hyprland boot, so its first
+~/Pictures/wallpapers/ws4/                symlink (DuckPond.jpg) is also
+~/Pictures/wallpapers/ws5/                written to wallpaper.toml init.
 ```
 
-`wpaperd` is not uninstalled — step 74 just moves its autostart
-desktop to `.disabled-step74` and stops the live service so it no
-longer races hyprpaper for the wallpaper slot. Restoring the old
-behaviour is a one-liner:
+Each pool is filled with up to 6 images from the Bing backgrounds
+(pool has to be non-empty for the 5-minute timer to do anything).
+Old V2 directories filled with `IMGA-` prefixes are still accepted —
+the listener resolves all `.jpg` symlinks in the pool, dedup, and
+random.
+
+#### What the step does
+
+`steps/74-workspace-wallpaper.sh` is, in order:
+
+1. **Cleanup** — removes every artifact the old step 74 used to install:
+   `~/.local/bin/hyprpaper`, `~/.local/lib/libhyprlang.*`,
+   `libhyprutils.*`, `libhyprwire.*`, `libhyprtoolkit.*`,
+   `libstdc++.so.6.0.36`, `libm-243-shim.so`,
+   `~/.config/autostart/hyprpaper-*.desktop`,
+   `~/.config/hypr/hyprpaper.conf`, and
+   `~/.local/share/hyprpaper/`. Idempotent.
+2. **Populate pools** — `~/Pictures/wallpapers/ws{1..5}/` symlinks
+   into `~/.local/share/backgrounds/`. If the Bing pool is empty,
+   the step warns and the pools ship with the per-workspace default
+   images only.
+3. **Install listener** — `bin/wpaperd-ws-switch.py` →
+   `~/bin/wpaperd-ws-switch.py`.
+4. **Write `wallpaper.toml`** — `[default]` + `[any]` + `[DP-4]` in
+   directory mode for everything that isn't `eDP-1`. `[eDP-1]` in
+   single-file mode, no `duration` (wpaperd refuses path-as-file +
+   duration as a misconfiguration).
+5. **Defuse two compositor-crash time-bombs** — see the box below.
+6. **Update `hyprland.conf`** — adds `exec-once = wpaperd` (XDG
+   autostart alone is unreliable across Hyprland restarts),
+   adds `exec-once = wpaperd-ws-switch.py`,
+   rebinds `Super+Ctrl+L` to `loginctl lock-session` (see "Why no
+   `omarchy-system-lock`?" below), and comments out the old
+   `exec-once = hyprpaper`.
+7. **Start the daemons** — `wpaperd` and the listener with `setsid`
+   so they survive the install shell exit.
+
+> **Why no `omarchy-system-lock`?**
+>
+> `Super+Ctrl+L → omarchy-system-lock` was the Omarchy default. That
+> path runs Quickshell's lock plugin, which on Debian still hits the
+> same `pam_ecryptfs` chain (via `/etc/pam.d/omarchy-lock-password`)
+> and the same Portal screencopy (`xdg-desktop-portal-hyprland`)
+> that were crashing the compositior. Routing the bind through
+> `loginctl lock-session` instead sends it down the exact same
+> path as the 5-minute idle trigger in `hypridle.conf`, where we
+> have already plumbed the working PAM config and Portal mask.
+> Trade-off: you lose the Quickshell lock panel (date + alarm icons
+> + battery), you gain **a lock screen that doesn't kill the
+> compositior**.
+
+#### Compositor-crash time-bombs (every fresh install must defuse these)
+
+Two pre-installed pieces of Debian trixie + Hyprland ecosystem
+software will crash Hyprland the moment they receive a screen-capture
+request. They look innocent until the second lock screen.
+
+**Time-bomb 1 — `xdg-desktop-portal-hyprland.service`**
+
+Every time `hyprlock` (or the Quickshell lock plugin) reaches for the
+screencopy protocol, the portal daemon marshals a Wayland request
+through `libwayland-client.so.0.23.1` and SIGSEGVs on the
+`wl_proxy_marshal_flags` call inside `wl_proxy_marshal_array_flags`
+— coredumpctl shows the death at `libwayland-client.so.0+0xbc8e`,
+`wl_proxy_marshal_flags` + `0x6d50`. Hyprland is taken down in the
+collapse (the dying portal leaves unsent replies on socket 2). This
+is **not** a Hyprland bug — Arch's `hyprland 0.56.2` upstream
+changelog has the same complaint. We mask the service so it never
+starts:
 
 ```bash
-mv ~/.config/autostart/wpaperd-autostart.desktop.disabled-step74 \
-   ~/.config/autostart/wpaperd-autostart.desktop
-systemctl --user start app-wpaperd\x2dautostart@autostart.service
+systemctl --user mask xdg-desktop-portal-hyprland.service
+systemctl --user stop  xdg-desktop-portal-hyprland.service
 ```
 
-Manual controls:
+Why is it even installed? Step 10's `xdg-desktop-portal-hyprland`
+package install is for `flatpak`/`snap` apps that need it. You are
+not running flatpak — `xdg-desktop-portal-hyprland` is unused on a
+native-only setup, and `xdg-desktop-portal` (the generic one) is
+still there to handle screen-sharing on demand.
+
+**Time-bomb 2 — `/etc/pam.d/hyprlock`**
+
+Debian's `/etc/pam.d/common-auth` (auto-injected by the
+`ecryptfs-utils` package) contains `auth required pam_ecryptfs.so
+unwrap`. That module calls `setuid`/`setreuid` to unwrap the
+mount-passphrase from `~/.ecryptfs/wrapped-passphrase`. If
+`~/.ecryptfs/` is absent (the default Debian trixie install, which
+just writes to a plain `ext4` home), `setreuid` returns an error
+that hyprlock treats as auth-failed-then-OK'd, which the compositor
+interprets as "auth backend didn't reply" and crashes. Replacing
+the file with one that **only** does shadow authentication drops
+the entire ecryptfs detour:
 
 ```bash
-hyprctl hyprpaper listactive                     # see current
-hyprctl hyprpaper wallpaper "eDP-1,/path/img"   # manual switch
-tail -f /tmp/ws-switch.log                       # IPC listener log
-pgrep -a -x hyprpaper                            # daemon PID
+sudo tee /etc/pam.d/hyprlock <<'EOF'
+auth     required    pam_unix.so nullok
+account  required    pam_unix.so
+EOF
 ```
 
-Hyprland-side: step 74 uncomments the `exec-once = hyprpaper` line
-in `~/.config/hypr/hyprland.conf` (left in place but disabled by
-step 73 when wpaperd was the active daemon).
+Step 74 ships the same content; the backup
+`/etc/pam.d/hyprlock.bak-omarchy-on-debian` lets you roll back.
 
-#### Future work
+#### Verifying the lock chain
 
-Once `hyprpaper ≥ 0.8.5` ships in trixie-backports with the
-image-swap use-after-free fixed, step 74 can simplify back to a
-plain `apt install hyprpaper` (no Arch download, no patchelf, no
-shim). Track https://github.com/hyprwm/hyprpaper/issues.
+After running step 74 (and rebooting Hyprland), the lock screen
+should:
 
-## The patches (the actual port)q
+1. Show the wallpaper scaled with `mode = "fit"`, blurred
+   `blur_passes = 1`, and `noise = 0` (the "A" profile — see
+   `~/.config/hypr/hyprlock.conf`).
+2. Take input at the password box without dying.
+3. Survive 10+ consecutive lock/unlock cycles with the compositior
+   on the same PID.
+
+`./steps/71-verify.sh` runs the same checks at boot-time:
+
+```
+==> lock chain (step 74 time-bomb defusal)
+  ok /etc/pam.d/hyprlock is the omarchy-on-debian override (pam_unix only)
+  ok xdg-desktop-portal-hyprland.service is masked (no screencopy segfault)
+==> wallpaper config
+  ok wpaperd config has [eDP-1] section
+  ok hyprland.conf: exec-once = wpaperd (live daemon)
+  ok hyprland.conf: Super+Ctrl+L → loginctl lock-session
+```
+
+#### Manual controls
+
+```bash
+wpaperctl get-wallpaper eDP-1               # current image
+wpaperctl reload-wallpaper                  # next image in the pool
+                                            # (single-file mode → no-op)
+tail -f /tmp/wpaperd-ws-switch.log          # switcher + timer log
+WPAPERD_TIMER=30 python3 \
+    ~/bin/wpaperd-ws-switch.py               # override the 5-minute timer
+                                             #   for ad-hoc testing
+hyprctl dispatch workspace 3                # jump to ws3 → silk-smooth,
+                                             # no random re-pick
+```
+
+#### Why we abandoned `hyprpaper` entirely
+
+Both Debian `0.8.4-1~bpo13+1` (GCC 14) **and** Arch `0.8.4-8`
+(GCC 16, the binaries step 74 used to fetch) fail to render on this
+stack:
+
+- The Arch binary runs, accepts `hyprctl hyprpaper wallpaper "eDP-1,
+  /path/to/img.jpg"` IPC, replies `ok`, prints "Found 1 output(s)"
+  — and then never connects to the live Hyprland Wayland socket.
+  `ls -l /proc/<pid>/fd` shows only `log.txt`, no `wayland-*`
+  socket even after several seconds. The PID is alive (state
+  `S+wchan=futex_`) but the `wl_display_connect()` call silently
+  never returns.
+- The Debian binary SIGSEGVs earlier (use-after-free in image
+  swap), but the Arch one survives longer in the IPC handshake
+  path before deadlocking, which makes it harder to spot.
+
+Either way, both render **nothing**. By the time you notice the
+desktop is a flat panel colour, you've spent an hour on
+`wpaperctl get-wallpaper` vs `grim` pixel sampling. `wpaperd`
+connects cleanly on the same Hyprland 0.55.2 stack and is the right
+long-term answer; the per-workspace layer lives in the
+in-house switcher, which is what step 74 ships.
+
+## The patches (the actual port)
 
 | Patch                                 | Symptom without it                                | Cause                                                                                              |
 | ------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
