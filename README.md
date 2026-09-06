@@ -36,6 +36,7 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 65   | `steps/65-about.sh`    | The About screen: `/etc/fastfetch/config.jsonc`, the Omarchy logo, and the xdg-terminal-exec glue that makes the `org.omarchy.about` class resolvable. |
 | 70   | `steps/70-bar-overlay.sh` | Pin the Quickshell top bar to `WlrLayer.Overlay` so it stays visible above fullscreen windows. |
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
+| 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  

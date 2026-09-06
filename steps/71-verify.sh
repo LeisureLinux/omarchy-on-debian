@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 70 — health check. Prints a pass/fail table; exits 1 if anything critical fails.
+# 71 — health check. Prints a pass/fail table; exits 1 if anything critical fails.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 . ./lib/common.sh
@@ -27,6 +27,7 @@ log "deployment"
 check "omarchy payload"        "[ -d '$OMARCHY_HOME/shell' ] && [ -d '$OMARCHY_HOME/bin' ]"
 check "omarchy-port launcher"  "[ -x '$HOME/.local/bin/omarchy-port' ]"
 check "uwsm-app shim"          "[ -x '$OMARCHY_HOME/bin/uwsm-app' ]"
+check "lock PAM service"       "[ -f /etc/pam.d/omarchy-lock-password ]"
 # Menu definition ships with the payload (default/omarchy/) and may also be
 # overridden per-user in ~/.config/omarchy/.
 check "menu definition"        "[ -f '$OMARCHY_HOME/default/omarchy/omarchy-menu.jsonc' ] || [ -f '$HOME/.config/omarchy/omarchy-menu.jsonc' ]"
