@@ -28,7 +28,7 @@ soft  "wpaperd"                "command -v wpaperd || command -v $HOME/.local/bi
 soft  "wpaperctl"              "command -v wpaperctl || command -v $HOME/.local/bin/wpaperctl"
 soft  "wpaperd-ws-switch.py"   "[ -x '$HOME/bin/wpaperd-ws-switch.py' ]"
 soft  "wpaperd-ws state file"  "[ -f '$HOME/.local/state/wpaperd-ws-state.json' ]"
-soft  "ws1..ws5 pools"         "for n in 1 2 3 4 5; do [ -d \"$HOME/Pictures/wallpapers/ws\$n\" ] || exit 1; done"
+soft  "wallpaper source dir"   "[ -d '$HOME/Pictures/wallpapers' ]"
 soft  "wallpaper-rotate wrap"  "[ -x '$OMARCHY_HOME/bin/omarchy-wallpaper-rotate' ] || [ -x '$HOME/.local/bin/omarchy-wallpaper-rotate' ] || [ -x '$HOME/.local/share/omarchy/bin/omarchy-wallpaper-rotate' ]"
 soft  "wpaperd running"        "pgrep -x wpaperd >/dev/null"
 soft  "ws-switcher running"    "pgrep -f '$HOME/bin/wpaperd-ws-switch.py' >/dev/null"
@@ -61,11 +61,16 @@ fi
 
 log "wallpaper config"
 if [[ -f "$HOME/.config/wpaperd/wallpaper.toml" ]]; then
-  if grep -q '^\[eDP-1\]' "$HOME/.config/wpaperd/wallpaper.toml"; then
-    ok "wpaperd config has [eDP-1] section"
+  if grep -qE '^\[(eDP-1|DP-4)\]' "$HOME/.config/wpaperd/wallpaper.toml"; then
+    err "wpaperd config has stale monitor-specific blocks — re-run step 73 for a generic config"
+    FAIL=1
+  elif grep -q '^\[any\]' "$HOME/.config/wpaperd/wallpaper.toml"; then
+    ok "wpaperd config is generic ([any] → ~/Pictures/wallpapers)"
   else
-    warn "wpaperd config has no [eDP-1] section (external-only setup?)"
+    warn "wpaperd config present but has no [any] fallback section"
   fi
+else
+  warn "no wpaperd config yet (run step 73)"
 fi
 if [[ -f "$HOME/.config/hypr/hyprland.conf" ]]; then
   if grep -qE '^exec-once *= *[/\$A-Za-z._-]*wpaperd' "$HOME/.config/hypr/hyprland.conf"; then

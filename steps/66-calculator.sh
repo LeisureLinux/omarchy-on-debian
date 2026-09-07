@@ -27,8 +27,14 @@ else
 fi
 
 # --- 2) rofi is the UI frontend (needed by the wrapper) ---
-if ! command -v rofi >/dev/null 2>&1; then
-  warn "rofi not found — install it for the calculator UI: apt install rofi"
+# It is not in step 10's core deps, so a fresh install would otherwise get
+# a calculator that can't open. Install it here so the feature actually works.
+if command -v rofi >/dev/null 2>&1; then
+  ok "rofi already installed ($(rofi -version 2>&1 | head -1))"
+else
+  info "installing rofi (apt)…"
+  run $SUDO apt-get install -y rofi
+  ok "rofi installed"
 fi
 
 # --- 3) deploy the wrapper into the Omarchy bin dir ---

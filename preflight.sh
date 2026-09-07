@@ -124,7 +124,7 @@ uinote "step 70  pin top bar → overlay layer (patch inside ~/.local/share/omar
 uinote "step 73  cargo install wpaperd + wpaperctl → ~/.cargo/bin/, symlinked to ~/.local/bin/"
 uinote "step 73  ~/.config/autostart/wpaperd-autostart.desktop + ~/.config/wpaperd/wallpaper.toml"
 uinote "step 74  ~/bin/wpaperd-ws-switch.py + ~/.config/autostart/wpaperd-ws-switch-autostart.desktop"
-uinote "step 74  per-ws pools → ~/Pictures/wallpapers/ws{1..5}/ ; state → ~/.local/state/"
+uinote "step 74  wallpapers → ~/Pictures/wallpapers/ (opt-in ws1/ ws2/ … sub-dirs) ; state → ~/.local/state/"
 uinote "step 74  systemctl --user mask xdg-desktop-portal-hyprland.service  (user-level, no sudo)"
 uinote "         (backups of any overwritten file → ~/.local/share/omarchy/.omarchy-on-debian/backups/)"
 echo
