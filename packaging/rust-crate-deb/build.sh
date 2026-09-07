@@ -7,8 +7,8 @@
 #
 # Strategy
 # --------
-#   1. cargo build --release with the proxy stripped (wpad.lan cannot
-#      reach crates.io from this machine).
+#   1. cargo build --release with the proxy stripped (so a dead LAN
+#      PAC proxy can't stall the fetch from crates.io).
 #   2. Strip the binary with `strip --strip-unneeded`.
 #   3. Stage into a fake filesystem rooted at $STAGE.
 #   4. fpm -s dir -t deb produces /workspace/build/<name>_<ver>_amd64.deb

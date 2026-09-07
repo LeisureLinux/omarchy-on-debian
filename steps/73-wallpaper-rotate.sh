@@ -3,9 +3,10 @@
 # ------------------------------------------------------------------
 # wpaperd is a Wayland wallpaper daemon with native folder rotation,
 # the closest equivalent to budgie-wallstreet for Hyprland/Omarchy.
-# Debian trixie main does not carry it; we install via cargo (with
-# the wpad.lan proxy stripped) until repo.freelamp.com carries the
-# .deb built by packaging/rust-crate-deb/build.sh.
+# Debian trixie main does not carry it; we install via cargo (stripping any
+# dead proxy so the build is not held hostage by a stale LAN PAC) until
+# repo.freelamp.com carries the .deb built by
+# packaging/rust-crate-deb/build.sh.
 # ------------------------------------------------------------------
 set -euo pipefail
 
@@ -16,30 +17,17 @@ log "73 — wpaperd rotation"
 CARGO_BIN="$HOME/.cargo/bin/cargo"
 [[ -x "$CARGO_BIN" ]] || die "cargo not found at $CARGO_BIN; install rustup first"
 
-# Pin wpad.lan to localhost so cargo's libproxy auto-detect (which
-# tries to fetch a PAC file from the wpad hostname) doesn't time out
-# on every registry hit. /etc/hosts is world-writable on Debian
-# trixie, so no sudo required. The commented line in /etc/hosts
-# (192.168.222.115 wpad wpad.local wpad.lan) does NOT resolve — we
-# need a real, un-commented entry to satisfy libproxy.
-if ! grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\bwpad\.lan\b" /etc/hosts 2>/dev/null; then
-  log "  pinning wpad.lan → 127.0.0.1 in /etc/hosts"
-  printf "127.0.0.1 wpad.lan\n" >> /etc/hosts
-fi
-
 install_one() {
   local crate="$1"
   if command -v "$crate" >/dev/null 2>&1; then
     log "  $crate already present: $(command -v "$crate")"
     return
   fi
-  log "  cargo install $crate --locked (proxy stripped + NO_PROXY=*)"
-  # Two layered fixes for the wpad.lan dead-proxy hell:
-  #   1. /etc/hosts pin (above) — libproxy stops trying to resolve
-  #      wpad.lan via DNS.
-  #   2. NO_PROXY=* + empty HTTPS_PROXY — reqwest/libproxy will still
-  #      hand back a "wpad.lan:8888" proxy URL via PAC, but reqwest
-  #      skips it because NO_PROXY matches everything.
+  log "  cargo install $crate --locked (proxy stripped, NO_PROXY=*)"
+  # Cargo/libproxy honour the HTTP(S)_PROXY env and may also hand back a
+  # proxy URL from an auto-detected PAC (e.g. a dead wpad.lan). Stripping
+  # every proxy var and forcing NO_PROXY=* makes the build go straight to
+  # the registry regardless of the surrounding network. Works for everyone.
   env -u http_proxy -u https_proxy -u all_proxy \
     -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
     NO_PROXY='*' HTTPS_PROXY='' HTTP_PROXY='' \

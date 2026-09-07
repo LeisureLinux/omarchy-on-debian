@@ -13,8 +13,9 @@ Tested on: Debian 13.6, Hyprland 0.55.2 (bpo13), Quickshell 0.3.0 (bpo13), Qt 6.
 ```
 git clone https://github.com/LeisureLinux/omarchy-on-debian
 cd omarchy-on-debian
-./install.sh --dry-run     # look first
-./install.sh               # then run
+./preflight.sh            # NEW: preview everything it touches (sudo + ~/.config ~/.local)
+./install.sh --dry-run    # also works: prints every command without running
+./install.sh              # then run
 ```
 
 Then log out and back in. `Super+Space` opens the menu, `Super+Alt+T` the theme
@@ -25,6 +26,12 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 
 ## What the steps do
 
+Roughly: steps 10/65/66/68/72/73/74 touch **system-level** things and will
+prompt for your password (`/etc`, apt packages); everything else only writes
+under your `~/.config`, `~/.local`, `~/.cargo`, `~/bin` and `~/Pictures`.
+Run `./preflight.sh` (or `./install.sh --preflight`) to see that sudo-vs-user
+split on your machine before committing.
+
 | Step | Script                 | What it fixes                                                                                                                                          |
 | ---- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 10   | `steps/10-deps.sh`     | Packages. Quickshell/Hyprland need `trixie-backports` (pinned to 100 so it only fills gaps). Nerd Font is downloaded because Debian ships none.        |
@@ -34,15 +41,36 @@ picker. `./steps/71-verify.sh` prints a health table at any time.
 | 50   | `steps/50-fonts.sh`    | Installs `omarchy.ttf` and forces `monospace` → Nerd Font.                                                                                             |
 | 60   | `steps/60-hyprland.sh` | Autostart, menu key, minimised-window workspace, About window rules.                                                                                   |
 | 65   | `steps/65-about.sh`    | The About screen: `/etc/fastfetch/config.jsonc`, the Omarchy logo, and the xdg-terminal-exec glue that makes the `org.omarchy.about` class resolvable. |
+| 66   | `steps/66-calculator.sh` | A lightweight `omacalc` (rofi + `qalc`) in place of the upstream Qt/QML AUR calculator. Installs `qalc` if missing. |
+| 67   | `steps/67-monitor-scaling.sh` | Patch `omarchy-hyprland-monitor-scaling` to use `hyprctl keyword monitor` first — `hyprctl eval` silently no-ops on a plain `hyprland.conf`. |
+| 68   | `steps/68-pkg-apt.sh`    | Rewrite the 4 `omarchy-pkg-*` pickers against apt (was pacman/yay); installs `apt-utils` + `fzf` if missing. |
+| 69   | `steps/69-show-desktop.sh` | Add a Super+D "show desktop" toggle (hide/restore the active workspace). |
 | 70   | `steps/70-bar-overlay.sh` | Pin the Quickshell top bar to `WlrLayer.Overlay` so it stays visible above fullscreen windows. |
 | 71   | `steps/71-verify.sh`   | Health checks + a lunar-table spot check.                                                                                                              |
 | 72   | `steps/72-lockscreen-pam.sh` | Install `/etc/pam.d/omarchy-lock-password` so Quickshell's lock plugin can authenticate. Without it Super+Ctrl+L silently does nothing (`qs ipc call lock lock` returns `missing-pam`). Debian-only — drops the Arch `pam_systemd_home.so` and uses `pam_unix` + Debian's stock modules. |
-| 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`. Pins `wpad.lan → 127.0.0.1` first (libproxy auto-detect). Writes an XDG autostart entry so `systemd-xdg-autostart-generator` mints `app-wpaperd\x2dautostart@autostart.service` (same shape as `app-wallstreet\x2dautostart@autostart.service`), a default `~/.config/wpaperd/wallpaper.toml`, comments out the `hyprpaper` exec-once. |
+| 73   | `steps/73-wallpaper-rotate.sh` | Install `wpaperd` (a Wayland wallpaper daemon with native folder rotation — the closest equivalent to `budgie-wallstreet`) via `cargo install`, with any dead proxy stripped (`NO_PROXY=*`). Writes an XDG autostart entry so `systemd-xdg-autostart-generator` mints `app-wpaperd\x2dautostart@autostart.service` (same shape as `app-wallstreet\x2dautostart@autostart.service`), a default `~/.config/wpaperd/wallpaper.toml`, comments out the `hyprpaper` exec-once. |
 | 74   | `steps/74-workspace-wallpaper.sh` | **Silky per-workspace wallpapers via `wpaperd`**. Bins the `hyprpaper` daemon entirely (Cleanup §1 of the step removes every Arch-prebuilt artifact). `bin/wpaperd-ws-switch.py` is a Python IPC bridge that listens on Hyprland `socket2.sock` and rewrites `[eDP-1].path` in `wallpaper.toml` so each workspace shows **the image you last saw on it** (no random re-pick on switch). A background thread rotates the active workspace's image every 5 minutes, with `WPAPERD_TIMER=30` overridable for testing. The step also **defuses two compositor-crash time-bombs** that were killing Hyprland on every lock screen — `systemctl --user mask xdg-desktop-portal-hyprland.service` (screencopy SIGSEGV) and replacement of `/etc/pam.d/hyprlock` to drop the `pam_ecryptfs.so unwrap` that breaks `setuid`. |
 
 Steps are standalone: `./install.sh --only 40` re-applies patches after an  
 upstream refresh. Backups of anything overwritten land in  
 `~/.local/share/omarchy/.omarchy-on-debian/backups/`.
+
+
+## Changelog
+
+- **v0.4.0** — `preflight.sh` (also `./install.sh --preflight`): a read-only
+  preview that splits every install action into *"will prompt for sudo"*
+  (apt packages, `/etc` writes) vs *"writes under your ~/.config ~/.local
+  ~/.cargo ~/bin"*. Paths in the per-workspace wallpaper tooling are now
+  derived from `$HOME` instead of a hard-coded home (works for any user).
+  Installer help + README step table now cover steps 66–69 and the new flag.
+
+- **v0.3.0** — bar overlay (Super+F), show-desktop (Super+D), about /
+  calculator / monitor-scaling / apt-pkg steps, lock-screen PAM,
+  wpaperd wallpaper rotation + per-workspace engine, and defusal of the
+  two lock-time compositor crashes. The Arch-prebuilt `hyprpaper` stash
+  (`.so` + GLIBC-2.43 math shim + `patchelf` rpath surgery) is gone —
+  step 74 removes any leftover and wpaperd owns the wallpaper slot.
 
 
 ## Packages
@@ -142,8 +170,9 @@ wpaperd 1.0.1 config quirks worth knowing before you start hacking:
 
 Step 73 also:
 
-- pins `wpad.lan → 127.0.0.1` in `/etc/hosts` (libproxy's PAC auto-detect
-  otherwise eats 30 s per `cargo build` cycle),
+- strips every `HTTP(S)_PROXY` and forces `NO_PROXY=*` around `cargo install`
+  so libproxy's PAC auto-detect can't stall the build on a dead LAN proxy
+  (works on any network, touches nothing in `/etc`),
 - installs via XDG autostart rather than a hand-written service — it writes
   `~/.config/autostart/wpaperd-autostart.desktop`. The
   `systemd-xdg-autostart-generator(8)` reads that file at every user-session
@@ -167,7 +196,7 @@ The actual unit (live, generated):
 ```
 $ systemctl --user status app-wpaperd\\x2dautostart@autostart.service
 ● app-wpaperd\x2dautostart@autostart.service - wpaperd
-     Loaded: loaded (/home/axu/.config/autostart/wpaperd-autostart.desktop; generated)
+     Loaded: loaded (~/.config/autostart/wpaperd-autostart.desktop; generated)
      Active: active (running) since ...
    Main PID: <wpaperd>
 ```

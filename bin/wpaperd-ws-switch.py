@@ -48,9 +48,10 @@ import threading
 import time
 from typing import Optional
 
-WS_BASE      = pathlib.Path("/home/axu/Pictures/wallpapers")
-WALLPAPER_T  = pathlib.Path("/home/axu/.config/wpaperd/wallpaper.toml")
-STATE_FILE   = pathlib.Path("/home/axu/.local/state/wpaperd-ws-state.json")
+_HOME        = pathlib.Path.home()  # environment-neutral: resolves to the invoking user's $HOME
+WS_BASE      = _HOME / "Pictures" / "wallpapers"
+WALLPAPER_T  = _HOME / ".config" / "wpaperd" / "wallpaper.toml"
+STATE_FILE   = _HOME / ".local" / "state" / "wpaperd-ws-state.json"
 MONITOR      = "eDP-1"
 LOG_PATH     = "/tmp/wpaperd-ws-switch.log"
 # Default 5 min — override with `WPAPERD_TIMER=30 python3 ...` for testing.

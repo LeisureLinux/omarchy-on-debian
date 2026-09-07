@@ -6,9 +6,11 @@ Each output is a partial JSONC file with only `label` and `title` overrides
 (existing icons/actions/providers preserved by the upstream merge logic).
 """
 import json, re, os, sys
+from pathlib import Path
 
-SRC = "/home/axu/.local/share/omarchy/default/omarchy/omarchy-menu.jsonc"
-OUT_DIR = "/home/axu/.local/share/omarchy/default/omarchy"
+_HOME = Path.home()
+SRC = _HOME / ".local/share/omarchy/default/omarchy/omarchy-menu.jsonc"
+OUT_DIR = _HOME / ".local/share/omarchy/default/omarchy"
 
 # ----------------------------------------------------------------------------
 # Translation tables: English label -> (zh-CN, zh-TW)

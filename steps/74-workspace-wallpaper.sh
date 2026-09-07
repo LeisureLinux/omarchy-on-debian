@@ -224,7 +224,7 @@ fi
 # ---------------------------------------------------------------------------
 log "  4. writing wpaperd configuration"
 mkdir -p "$(dirname "$WPAPERD_CFG")"
-cat > "$WPAPERD_CFG" <<'TOML'
+cat > "$WPAPERD_CFG" <<TOML
 # wpaperd configuration — managed by ./steps/74-workspace-wallpaper.sh
 #
 # Topology:
@@ -248,14 +248,14 @@ sorting         = "random"
 transition_time = 1000
 
 [any]
-path = "/home/axu/.local/share/backgrounds"
+path = "${BG_POOL}"
 
 [eDP-1]
-path     = "/home/axu/.local/share/backgrounds/DuckPond.jpg"
+path     = "${BG_POOL}/DuckPond.jpg"
 
 [DP-4]
 duration = "10m"
-path     = "/home/axu/.local/share/backgrounds/widescreen"
+path     = "${BG_POOL}/widescreen"
 TOML
 ok "wrote $WPAPERD_CFG"
 

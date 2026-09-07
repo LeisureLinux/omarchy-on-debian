@@ -39,8 +39,8 @@ CRATE=wpaperd VERSION=1.0.1 \
 
 The script:
 1. `git clone` the upstream tag (v$VERSION) into `build/src/`
-2. `cargo build --release --locked` (proxy env stripped — wpad.lan
-   cannot reach crates.io)
+2. `cargo build --release --locked` (proxy env stripped — a dead LAN
+   PAC proxy cannot stall the fetch from crates.io)
 3. `strip --strip-unneeded` the binary
 4. Stages `usr/bin/<bin>` plus any `EXTRA_FILES` into `build/stage/`
 5. `fpm -s dir -t deb` produces
