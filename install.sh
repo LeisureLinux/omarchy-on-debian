@@ -15,7 +15,8 @@ usage() {
   cat <<EOF
 Usage: ./install.sh [options]
   --dry-run        show commands without changing anything
-  --only N         run only step N (10|20|30|40|50|60|65|66|67|68|69|70|71|72|73)
+  --preflight      print what this install will touch (sudo + ~/.config ~/.local), then exit
+  --only N         run only step N (10|20|30|40|50|60|65|66|67|68|69|70|71|72|73|74)
   --from N         start at step N
   --src PATH       local Omarchy checkout or tarball (default: clone $OMARCHY_REPO)
   --no-clock-zh    skip the Chinese lunar/term clock extra
@@ -28,6 +29,7 @@ FROM=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --preflight) PREFLIGHT=1 ;;
     --only) ONLY="${2:?--only needs a step number}"; shift ;;
     --from) FROM="${2:?--from needs a step number}"; shift ;;
     --src) OMARCHY_SRC="${2:?--src needs a path}"; shift ;;
@@ -38,6 +40,12 @@ while [ $# -gt 0 ]; do
   shift
 done
 export DRY_RUN WITH_CLOCK_ZH OMARCHY_SRC OMARCHY_HOME OMARCHY_WORK OMARCHY_REPO OMARCHY_BRANCH
+
+# Show the sudo vs ~/.config ~/.local split, then stop. Nothing runs.
+if [ "${PREFLIGHT:-0}" = 1 ]; then
+  bash preflight.sh
+  exit 0
+fi
 
 STEPS=(steps/10-deps.sh steps/20-fetch.sh steps/30-deploy.sh steps/40-patch.sh
        steps/50-fonts.sh steps/60-hyprland.sh steps/65-about.sh steps/66-calculator.sh
